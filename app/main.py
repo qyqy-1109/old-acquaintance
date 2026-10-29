@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -36,8 +37,6 @@ def _start_proactive_beat(app) -> "threading.Event":
     放线程里最省事、也跟现有 `services/worker.py` 的做法一致。
     线程是 daemon，且**每一圈都包 try/except**——主动说话永远不能拖垮服务。
     """
-    import threading
-
     stop = threading.Event()
 
     def loop():

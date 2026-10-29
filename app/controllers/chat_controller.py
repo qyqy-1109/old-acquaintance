@@ -80,7 +80,6 @@ def healthz(request: Request) -> dict:
     return {
         "ok": True,
         "service": "旧识",
-        "data_dir": config.DATA_DIR,
         "data_dir_writable": os.access(config.DATA_DIR, os.W_OK),
         "user_instances": registry.count(),          # 常驻实例数（见 WB_MAX_SERVICES）
         "auth_required": auth.required(),

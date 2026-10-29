@@ -10,8 +10,8 @@ const password = "isolated-auth-check-2026";
 const health = await (await fetch(base + "/api/healthz")).json();
 assert.equal(health.password_login, true);
 assert.equal(health.account_setup_required, true);
-const preview = path.resolve("_tmptest/password-auth-preview");
-assert.equal(path.resolve(health.data_dir).toLowerCase(), preview.toLowerCase());
+assert.equal(health.data_dir_writable, true);
+assert.equal("data_dir" in health, false, "healthz must not expose a local path");
 let created = false;
 const report = { status: "running", checks: [] };
 

@@ -242,6 +242,8 @@ class ApiSmokeTests(unittest.TestCase):
                     health = client.get("/api/healthz").json()
                     self.assertFalse(health["keys_ready"])
                     self.assertTrue(health["first_run"])
+                    self.assertTrue(health["data_dir_writable"])
+                    self.assertNotIn("data_dir", health)
                     settings = client.get("/api/settings")
                     self.assertEqual(settings.status_code, 200)
                     card = json.dumps(CARD_V2, ensure_ascii=False)
