@@ -1755,7 +1755,44 @@ class ChatService:
             "world": [{"text": e["text"], "source": e.get("source", "manual")}
                       for e in self.world.entries],
             "world_count": self.world.count(),
+            "session": self.store.session,
         }
+
+    # ==================== 会话 ====================
+
+    def sessions(self) -> dict:
+        return {"current": self.store.session, "items": self.store.list_sessions()}
+
+    def _after_session_change(self) -> None:
+        self.speaker.session = self.store.session
+        self._greeting = None
+        self._delivered_turns = []
+        self._pending_context = None
+        self._pending_question = ""
+        self._nearby_block = ""
+        self.last_turn = None
+
+    def new_session(self, title: str = "") -> dict:
+        self.store.new_session(title)
+        self._after_session_change()
+        return self.sessions()
+
+    def select_session(self, session_id: str) -> dict:
+        self.store.select_session(session_id)
+        self._after_session_change()
+        return self.sessions()
+
+    def rename_session(self, session_id: str, title: str) -> dict:
+        self.store.rename_session(session_id, title)
+        return self.sessions()
+
+    def delete_session(self, session_id: str) -> dict:
+        self.store.delete_session(session_id)
+        self._after_session_change()
+        return self.sessions()
+
+    def session_messages(self, session_id: str) -> list[dict]:
+        return self.store.session_messages(session_id)
 
     # ==================== 收尾 ====================
 

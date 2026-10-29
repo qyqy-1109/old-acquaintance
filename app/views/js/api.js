@@ -173,6 +173,34 @@ export class ApiClient {
     });
   }
 
+  async sessions() {
+    return this.json("/api/sessions");
+  }
+
+  async createSession(title = "") {
+    return this.json("/api/sessions", { method: "POST", body: { title } });
+  }
+
+  async selectSession(sessionId) {
+    return this.json(`/api/sessions/${encodeURIComponent(sessionId)}/select`, {
+      method: "POST", body: {},
+    });
+  }
+
+  async renameSession(sessionId, title) {
+    return this.json(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "PATCH", body: { title },
+    });
+  }
+
+  async deleteSession(sessionId) {
+    return this.json(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+  }
+
+  async sessionMessages(sessionId) {
+    return this.json(`/api/sessions/${encodeURIComponent(sessionId)}/messages`);
+  }
+
   async claimLegacy() {
     return this.json("/api/auth/legacy", { method: "POST" });
   }

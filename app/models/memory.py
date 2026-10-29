@@ -68,6 +68,7 @@ from app.models.memory_write import WriteMixin, WorldMixin
 from app.models.memory_read import StateMixin, RecallMixin
 from app.models.memory_lifecycle import ForgetMixin, EventsMixin
 from app.models.memory_opinions import OpinionMixin
+from app.models.memory_sessions import SessionMixin
 
 
 class MemoryStore(
@@ -79,6 +80,7 @@ class MemoryStore(
     ForgetMixin,
     EventsMixin,
     OpinionMixin,
+    SessionMixin,
 ):
     """四层记忆的中枢：事实短句 + 滚动摘要 + 向量召回 + 遗忘。
 

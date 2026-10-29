@@ -150,6 +150,10 @@ def test_first_run_wizard_and_demo_contract_is_present():
             'id="persona-export-dialog"',
             'id="persona-export-v2"',
             'id="profile-avatar"',
+            'id="sessions-open"',
+            'id="sessions-dialog"',
+            'id="session-new"',
+            'id="export-all"',
         ):
             assert marker in html, f"首次启动/演示模式缺少 {marker}"
         assert html.find('id="wizard-step-1"') < html.find('id="wizard-step-2"') < html.find('id="wizard-step-3"')

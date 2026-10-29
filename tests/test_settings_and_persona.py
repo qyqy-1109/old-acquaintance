@@ -1,9 +1,11 @@
 import json
 import os
 import base64
+import io
 import struct
 import tempfile
 import unittest
+import zipfile
 import zlib
 from contextlib import ExitStack
 from pathlib import Path
@@ -236,6 +238,30 @@ class ApiSmokeTests(unittest.TestCase):
                     self.assertEqual(av.headers["content-type"], "image/png")
                     self.assertEqual(av.content, png)
                     self.assertEqual(client.post("/api/chat", json={"message": "hi"}).status_code, 503)
+                    created = client.post("/api/sessions", json={"title": "第二段"})
+                    self.assertEqual(created.status_code, 200)
+                    session_id = created.json()["current"]
+                    listed = client.get("/api/sessions").json()
+                    item = next(i for i in listed["items"] if i["id"] == session_id)
+                    self.assertEqual(item["title"], "第二段")
+                    renamed = client.patch(f"/api/sessions/{session_id}",
+                                           json={"title": "改过的名字"})
+                    self.assertEqual(renamed.status_code, 200)
+                    listed = client.get("/api/sessions").json()
+                    item = next(i for i in listed["items"] if i["id"] == session_id)
+                    self.assertEqual(item["title"], "改过的名字")
+                    self.assertEqual(client.post(f"/api/sessions/{session_id}/select",
+                                                 json={}).status_code, 200)
+                    self.assertEqual(client.get(f"/api/sessions/{session_id}/messages")
+                                     .json()["messages"], [])
+                    self.assertEqual(client.post(f"/api/sessions/{session_id}/messages")
+                                     .status_code, 405)
+                    exported = client.get("/api/export")
+                    self.assertEqual(exported.status_code, 200)
+                    with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+                        self.assertIn("memory.db", archive.namelist())
+                        self.assertNotIn("settings.json", archive.namelist())
+                    self.assertEqual(client.delete(f"/api/sessions/{session_id}").status_code, 200)
                 registry.close_all()
 
 

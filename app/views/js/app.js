@@ -756,34 +756,21 @@ async function login() {
   } finally { setLoginBusy(false); }
 }
 
-async function enterApp(data, { demo = false } = {}) {
-  demoMode = demo;
-  const epoch = client.epoch;
-  $("entry-screen").hidden = true;
-  $("app-shell").hidden = false;
-  $("demo-banner").hidden = !demo;
-  for (const button of document.querySelectorAll("[data-view]")) {
-    button.disabled = demo && !["chat", "profile"].includes(button.dataset.view);
+async function loadSessionMessages(sessionId) {
+  try {
+    const data = await client.sessionMessages(sessionId);
+    log.replaceChildren();
+    for (const item of data.messages || []) {
+      message(item.role === "user" ? "user" : "assistant", item.content || "", item.ts);
+    }
+    return (data.messages || []).length;
+  } catch (error) {
+    if (!isQuiet(error)) systemMessage("历史消息暂时无法加载：" + error.message);
+    return 0;
   }
-  $("persona-import").disabled = demo;
-  $("persona-export").disabled = demo;
-  $("command-open").disabled = demo;
-  $("feedback-open").disabled = demo;
-  log.replaceChildren();
-  followLatest = true;
-  renderState(data);
-  $("current-user").textContent = demo ? "演示模式" : client.username || "已登录";
-  $("current-user").title = $("current-user").textContent;
-  $("user-avatar").textContent = demo ? "演" : Array.from(client.username)[0] || "你";
-  $("identity-kind").textContent = demo ? "只读预览" : "账号登录";
-  navigate("chat");
-  if (demo) {
-    resetAvatar();
-    renderDemoConversation();
-    updateComposer();
-    return;
-  }
-  loadAvatar();
+}
+
+async function showGreeting(epoch = client.epoch) {
   greetingBusy = true;
   updateComposer();
   const greeting = message("assistant", "正在打个招呼…");
@@ -803,6 +790,169 @@ async function enterApp(data, { demo = false } = {}) {
       input.focus();
       checkLegacyClaim(epoch);
     }
+  }
+}
+
+function sessionTime(ts) {
+  if (!ts) return "";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+  }).format(new Date(Number(ts) * 1000));
+}
+
+function renderSessions(data) {
+  const list = $("sessions-list");
+  list.replaceChildren();
+  const items = data.items || [];
+  if (!items.length) {
+    list.append(element("p", "py-6 text-sm text-muted", "还没有会话。"));
+    return;
+  }
+  for (const item of items) {
+    const row = element("div", "flex items-center gap-3 py-3");
+    const select = element("button", "min-w-0 flex-1 text-left");
+    select.type = "button";
+    select.append(
+      element("p", "truncate font-medium " + (item.active ? "text-brand" : ""),
+              item.title || "新对话"),
+      element("p", "mt-1 text-xs text-muted",
+              `${item.message_count} 条消息${item.updated_at ? " · " + sessionTime(item.updated_at) : ""}`));
+    select.addEventListener("click", () => switchSession(item.id));
+    const rename = element("button", "text-xs text-muted", "改名");
+    rename.type = "button";
+    rename.addEventListener("click", () => renameSession(item));
+    const remove = iconButton("trash-2", "删除会话");
+    remove.addEventListener("click", () => removeSession(item));
+    row.append(select, rename, remove);
+    list.append(row);
+  }
+}
+
+async function refreshSessions() {
+  try {
+    const data = await client.sessions();
+    renderSessions(data);
+    return data;
+  } catch (error) {
+    setError("sessions-error", error.message);
+    return null;
+  }
+}
+
+async function openSessions() {
+  setError("sessions-error");
+  if (!$("sessions-dialog").open) $("sessions-dialog").showModal();
+  await refreshSessions();
+}
+
+async function switchSession(sessionId) {
+  try {
+    await client.selectSession(sessionId);
+    const data = await client.json("/api/state");
+    renderState(data);
+    const count = await loadSessionMessages(sessionId);
+    $("sessions-dialog").close();
+    if (!count) await showGreeting();
+    else { updateComposer(); input.focus(); }
+    toast("已切换会话");
+  } catch (error) {
+    setError("sessions-error", error.message);
+  }
+}
+
+async function newSession() {
+  try {
+    await client.createSession();
+    const data = await client.json("/api/state");
+    renderState(data);
+    log.replaceChildren();
+    $("sessions-dialog").close();
+    await showGreeting();
+    toast("已新建会话");
+  } catch (error) {
+    setError("sessions-error", error.message);
+  }
+}
+
+async function renameSession(item) {
+  const title = prompt("会话名称", item.title || "新对话");
+  if (title === null) return;
+  if (!title.trim()) { setError("sessions-error", "会话名称不能为空。"); return; }
+  try {
+    await client.renameSession(item.id, title.trim());
+    await refreshSessions();
+  } catch (error) {
+    setError("sessions-error", error.message);
+  }
+}
+
+async function removeSession(item) {
+  if (!confirm(`删除「${item.title || "新对话"}」及其消息？长期记忆不会被删除。`)) return;
+  try {
+    await client.deleteSession(item.id);
+    const data = await client.json("/api/state");
+    renderState(data);
+    const count = await loadSessionMessages(data.session);
+    await refreshSessions();
+    if (!count) await showGreeting();
+  } catch (error) {
+    setError("sessions-error", error.message);
+  }
+}
+
+async function downloadAllData() {
+  try {
+    const response = await client.request("/api/export");
+    const blob = await response.blob();
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "jiushi-export.zip";
+    link.click();
+    URL.revokeObjectURL(link.href);
+    toast("已导出全部数据");
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function enterApp(data, { demo = false } = {}) {
+  demoMode = demo;
+  const epoch = client.epoch;
+  $("entry-screen").hidden = true;
+  $("app-shell").hidden = false;
+  $("demo-banner").hidden = !demo;
+  for (const button of document.querySelectorAll("[data-view]")) {
+    button.disabled = demo && !["chat", "profile"].includes(button.dataset.view);
+  }
+  $("persona-import").disabled = demo;
+  $("persona-export").disabled = demo;
+  $("export-all").disabled = demo;
+  $("sessions-open").disabled = demo;
+  $("command-open").disabled = demo;
+  $("feedback-open").disabled = demo;
+  log.replaceChildren();
+  followLatest = true;
+  renderState(data);
+  $("current-user").textContent = demo ? "演示模式" : client.username || "已登录";
+  $("current-user").title = $("current-user").textContent;
+  $("user-avatar").textContent = demo ? "演" : Array.from(client.username)[0] || "你";
+  $("identity-kind").textContent = demo ? "只读预览" : "账号登录";
+  navigate("chat");
+  if (demo) {
+    resetAvatar();
+    renderDemoConversation();
+    updateComposer();
+    return;
+  }
+  loadAvatar();
+  const historyCount = await loadSessionMessages(data.session || "");
+  if (historyCount) {
+    greetingBusy = false;
+    updateComposer();
+    input.focus();
+    checkLegacyClaim(epoch);
+  } else {
+    await showGreeting(epoch);
   }
 }
 
@@ -1142,10 +1292,11 @@ function systemMessage(text) {
   scrollLatest();
 }
 
-function message(role, text = "") {
+function message(role, text = "", ts = null) {
   const root = element("article", "message " + (role === "user" ? "me" : "her"));
   const content = element("div", "message-content");
-  const meta = element("p", "message-meta", (role === "user" ? "你" : state?.name || "沈知夏") + "  " + new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date()));
+  const when = ts ? new Date(Number(ts) * 1000) : new Date();
+  const meta = element("p", "message-meta", (role === "user" ? "你" : state?.name || "沈知夏") + "  " + new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(when));
   const body = element("p", "message-bubble", text);
   content.append(meta, body);
   if (role !== "user") {
@@ -1394,6 +1545,9 @@ for (const [label, command] of commands) {
 
 $("login-form").addEventListener("submit", event => { event.preventDefault(); login(); });
 $("settings-open").addEventListener("click", openSettings);
+$("sessions-open").addEventListener("click", openSessions);
+$("session-new").addEventListener("click", newSession);
+$("export-all").addEventListener("click", downloadAllData);
 $("wizard-model").addEventListener("submit", saveWizardModel);
 $("wizard-test").addEventListener("click", testWizardModel);
 $("wizard-more").addEventListener("click", openSettings);

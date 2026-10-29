@@ -81,6 +81,14 @@ CREATE TABLE IF NOT EXISTS summaries (
     cursor  INTEGER NOT NULL DEFAULT 0
 );
 
+-- 会话列表的显示信息；消息原文仍在 messages 表（session 列就是这里的 id）。
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id         TEXT PRIMARY KEY,
+    title      TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS pending (
     id   INTEGER PRIMARY KEY AUTOINCREMENT,
     text TEXT NOT NULL,
