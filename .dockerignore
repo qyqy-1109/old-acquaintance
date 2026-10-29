@@ -12,6 +12,7 @@
 memory.db
 memory.db-wal
 memory.db-shm
+settings.json
 # 迁移前留下的记忆快照（含真实对话）：文件名不带 .db 后缀，旧规则挡不住（T64 补）
 memory.db.bak*
 *.bak-*

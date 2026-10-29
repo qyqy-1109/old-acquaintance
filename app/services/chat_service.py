@@ -201,14 +201,23 @@ COMMANDS = ("/personality", "/world", "/user", "/profile", "/clear", "/mem", "/f
 
 class ChatService:
     def __init__(self, user_id: str = ""):
+        # 没有 key 时也要能启动，否则新用户根本看不到配置页面。
+        # 这里用占位 key 构造客户端；真正发请求前由 ChatService/Controller 拦住。
+        def _client(api_key: str, base_url: str) -> OpenAI:
+            return OpenAI(api_key=api_key or "missing-credentials",
+                          base_url=base_url, timeout=60.0, max_retries=2)
+
+        self.bg_ready = bool(config.API_KEY or config.CHAT_API_KEY)
+        self.chat_ready = bool(config.CHAT_API_KEY or config.API_KEY)
+        self.embed_ready = bool(config.EMBED_API_KEY)
+        self.keys_ready = self.chat_ready and self.embed_ready
         # 后台活的客户端：提炼、画像、开场白、embedding 都走它
-        self.client = OpenAI(api_key=config.API_KEY, base_url=config.BASE_URL)
+        self.client = _client(config.API_KEY, config.BASE_URL)
         # 主对话的客户端。跟上面指向同一处时直接复用，不额外建连接。
         if config.CHAT_API_KEY == config.API_KEY and config.CHAT_BASE_URL == config.BASE_URL:
             self.chat_client = self.client
         else:
-            self.chat_client = OpenAI(api_key=config.CHAT_API_KEY,
-                                      base_url=config.CHAT_BASE_URL)
+            self.chat_client = _client(config.CHAT_API_KEY, config.CHAT_BASE_URL)
         # ===== 每用户一套数据（形态：每人一个她）=====
         # 路径**在构造时算**，而不是用 config 的模块级常量——这样测试可以临时改
         # DATA_DIR 来验证隔离（见 test_multi_user_data_isolation）。user_id 为空时
@@ -226,8 +235,7 @@ class ChatService:
         if config.EMBED_API_KEY == config.API_KEY and config.EMBED_BASE_URL == config.BASE_URL:
             self.embed_client = self.client
         else:
-            self.embed_client = OpenAI(api_key=config.EMBED_API_KEY,
-                                       base_url=config.EMBED_BASE_URL)
+            self.embed_client = _client(config.EMBED_API_KEY, config.EMBED_BASE_URL)
         # 她的名字要传进记忆层：`slots` 的 entity 从「助手」改成用名字
         # （用户 2026-09-29 反馈："把助手换成沈知夏，她已经有自己的名字了"）。
         # 走 cfg 而不是让 Model 去读人设文件——分层纪律：Model 不知道自己被谁调用。
@@ -246,7 +254,12 @@ class ChatService:
             context_limit=config.CONTINUITY_CONTEXT_LIMIT)
         self.continuity = self.store.continuity
         self.world = WorldBook(self.store, path=_p("world.json"))
-        self.sync_note = self.world.sync()
+        # 没有 embedding key 时同步会把每条世界书都打成一次失败请求；先跳过，
+        # 等用户在设置页配好 key 后由新的服务实例再同步。
+        if self.embed_ready:
+            self.sync_note = self.world.sync()
+        else:
+            self.sync_note = "Embedding 尚未配置，世界书同步将在配置后运行。"
         # 关系层（`#146`）：称呼/阶段/承诺/关心方式。慢变、手写，不进 LLM 的演化通道。
         self.relationship = Relationship(path=_p("relationship.json"))
         self._turns_since_profile = 0
@@ -339,12 +352,14 @@ class ChatService:
         # 必须有个显式检查。只报告不改数据。
         self.memory_issues: list[dict] = []
         self.memory_check_error = ""
-        if config.CHECK_ON_START:
+        if config.CHECK_ON_START and self.bg_ready:
             try:
                 self.memory_issues = self.store.check_consistency()
             except Exception as exc:
                 self.memory_check_error = f"记忆体检未完成：{exc}"
                 log.error("启动记忆体检未完成（服务继续启动）：%s", exc)
+        elif config.CHECK_ON_START and not self.bg_ready:
+            self.memory_check_error = "尚未配置模型密钥，记忆体检将在配置后运行。"
 
     def _city_from_world(self) -> str:
         """世界书里写的城市 → adcode；没有就返回空串（`#109`）。
@@ -673,6 +688,8 @@ class ChatService:
           · **CLI 与 benchmark → False**：前者会把标记原样打到终端，后者更要紧——
             改动 benchmark 的提示词会让**历史基线立刻不可比**（`T40` 的教训）。
         """
+        if not getattr(self, "keys_ready", True):
+            raise RuntimeError("模型尚未配置：请先在设置页填写主对话和 embedding 的 API Key。")
         self._pending_question = question or ""
         # 她的生活往前走（`#107`）。两种情形：
         #  · 只是跨了一格 → 正常推进；
@@ -901,6 +918,8 @@ class ChatService:
 
     def ask(self, messages: list[dict]) -> str:
         """非流式：等全部生成完一次性返回，出错时把服务端原始响应打出来好排查。"""
+        if not getattr(self, "chat_ready", True):
+            raise RuntimeError("主对话尚未配置：请先在设置页填写 API Key。")
         raw = self.chat_client.chat.completions.with_raw_response.create(
             model=config.MODEL, messages=messages, temperature=0.7,
             max_tokens=config.MAX_TOKENS, **self._no_think_kwargs(),
@@ -943,6 +962,8 @@ class ChatService:
         （实测 21:27 / 22:33 照旧出现），所以在输出侧兜一道，**只剥开头**、
         句中与正常的时间表达一个字都不动，并且每次都留痕（见 app/utils/answers.py）。
         """
+        if not getattr(self, "chat_ready", True):
+            raise RuntimeError("主对话尚未配置：请先在设置页填写 API Key。")
         resp = self.chat_client.chat.completions.create(
             model=config.MODEL, messages=messages, temperature=0.7,
             max_tokens=config.MAX_TOKENS, stream=True,
@@ -1214,7 +1235,7 @@ class ChatService:
 
     def _make_greeting(self) -> str:
         canned = self.personality.greet()
-        if not config.GREETING_USE_MEMORY:
+        if not config.GREETING_USE_MEMORY or not getattr(self, "bg_ready", True):
             return canned
 
         now = time.time()
@@ -1717,6 +1738,9 @@ class ChatService:
             # 主对话和后台活可能在不同供应商，把两边都显示出来便于确认
             "chat_provider": config.CHAT_BASE_URL.split("//")[-1].split("/")[0],
             "bg_model": config.EXTRACT_MODEL,
+            "keys_ready": getattr(self, "keys_ready", True),
+            "chat_ready": getattr(self, "chat_ready", True),
+            "embed_ready": getattr(self, "embed_ready", True),
             "name": self.personality.display_name(),
             # 只给缓存值，不在这里生成——state 每轮都会被前端拉一次。
             # 真正的生成入口是 /api/greeting（页面打开/刷新时调）。

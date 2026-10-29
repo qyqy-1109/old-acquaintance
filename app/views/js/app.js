@@ -14,6 +14,10 @@ const client = new ApiClient({ onUnauthorized: () => {
 } });
 let health = null;
 let state = null;
+let settings = null;
+let settingsInitial = {};
+let pendingPersonaContent = "";
+let personaFilename = "";
 let setupMode = false;
 let loginBusy = false;
 let busy = false;
@@ -129,18 +133,206 @@ async function action(button, task, errorId = "memory-error") {
 
 function configureEntry() {
   setupMode = Boolean(health?.account_setup_required);
-  if (health?.password_login) $("entry-status").querySelector("span:last-child").textContent = setupMode ? "首次创建账号" : "身份验证已开启";
+  const keysReady = Boolean(health?.keys_ready);
+  $("entry-setup").hidden = keysReady;
+  if (health?.password_login) $("entry-status").querySelector("span:last-child").textContent =
+    !keysReady ? "先配置模型" : setupMode ? "首次创建账号" : "身份验证已开启";
   $("password-confirm-wrap").hidden = !setupMode;
   $("inherit-default-wrap").hidden = !setupMode || !health?.legacy_data_available;
   $("password-input").autocomplete = setupMode ? "new-password" : "current-password";
+  if (!loginBusy) setLoginBusy(false);
 }
 
 function setLoginBusy(active) {
   loginBusy = active;
-  $("login-submit").disabled = active || !health?.password_login;
-  $("login-submit").querySelector("span").textContent = active ? "正在验证" : health?.password_login ? setupMode ? "创建账号并进入" : "登录" : "服务未连接";
+  $("login-submit").disabled = active || !health?.password_login || !health?.keys_ready;
+  $("login-submit").querySelector("span").textContent = active ? "正在验证"
+    : !health?.password_login ? "服务未连接"
+      : !health?.keys_ready ? "先配置模型"
+        : setupMode ? "创建账号并进入" : "登录";
   $("login-submit").setAttribute("aria-busy", String(active));
   for (const id of ["username-input", "password-input", "password-confirm", "inherit-default", "toggle-password"]) $(id).disabled = active;
+}
+
+const settingsFields = {
+  "settings-base": ["WB_BASE_URL", false],
+  "settings-api-key": ["WB_API_KEY", true],
+  "settings-chat-base": ["WB_CHAT_BASE_URL", false],
+  "settings-chat-key": ["WB_CHAT_API_KEY", true],
+  "settings-embed-base": ["WB_EMBED_BASE_URL", false],
+  "settings-embed-key": ["WB_EMBED_API_KEY", true],
+  "settings-model": ["WB_MODEL", false],
+  "settings-embed-model": ["WB_EMBED_MODEL", false],
+  "settings-embed-dimensions": ["WB_EMBED_DIMENSIONS", false],
+  "settings-extract-model": ["WB_EXTRACT_MODEL", false],
+  "settings-amap-key": ["WB_AMAP_KEY", true],
+  "settings-emotion-key": ["WB_EMOTION_API_KEY", true],
+  "settings-tts-key": ["WB_TTS_API_KEY", true],
+};
+
+function sourceText(source) {
+  return { env: "环境变量", settings: "页面设置", envfile: ".env", default: "默认值", missing: "未配置" }[source] || "未配置";
+}
+
+function renderSettings(data) {
+  settings = data;
+  settingsInitial = {};
+  const managed = new Set(data.managed_by_env || []);
+  for (const [id, [key, secret]] of Object.entries(settingsFields)) {
+    const input = $(id);
+    const item = data.values?.[key] || {};
+    input.disabled = managed.has(key);
+    if (secret) {
+      input.value = "";
+      input.placeholder = item.set ? `已设置：${item.masked}` : "未设置";
+    } else {
+      input.value = item.value || "";
+      input.placeholder = key === "settings-chat-base" ? "留空复用主 API 地址"
+        : key === "settings-extract-model" ? "留空与对话模型相同"
+          : data.defaults?.[key] || "";
+      settingsInitial[key] = input.value;
+    }
+  }
+  const chat = data.chat_ready ? "已配置" : "未配置";
+  const bg = data.bg_ready ? "已配置" : "未配置";
+  const embed = data.embed_ready ? "已配置" : "未配置";
+  $("settings-summary").textContent =
+    `主对话：${chat}（${sourceText(data.chat_source)}） · 后台：${bg}（${sourceText(data.bg_source)}）`
+    + ` · Embedding：${embed}（${sourceText(data.embed_source)}）`
+    + (managed.size ? `\n以下项由部署环境变量管理，页面只读：${[...managed].join("、")}` : "");
+}
+
+function collectSettings() {
+  const values = {};
+  for (const [id, [key, secret]] of Object.entries(settingsFields)) {
+    const value = $(id).value.trim();
+    if (secret) {
+      if (value) values[key] = value;
+    } else if (value !== (settingsInitial[key] ?? "")) {
+      values[key] = value;
+    }
+  }
+  return values;
+}
+
+async function openSettings() {
+  setError("settings-error");
+  $("settings-note").hidden = true;
+  $("settings-summary").textContent = "正在读取配置…";
+  if (!$("settings-dialog").open) $("settings-dialog").showModal();
+  try {
+    renderSettings(await client.settings());
+  } catch (error) {
+    $("settings-summary").textContent = "配置暂时无法读取。";
+    setError("settings-error", error.message);
+  }
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  const values = collectSettings();
+  if (!Object.keys(values).length) {
+    setError("settings-error", "没有改动。填写或修改一项后再保存。");
+    return;
+  }
+  setError("settings-error");
+  $("settings-note").hidden = true;
+  setButtonBusy($("settings-save"), true);
+  try {
+    const result = await client.saveSettings(values);
+    renderSettings(result.keys);
+    health = await client.json("/api/healthz", { anonymous: true, suppressAuth: true });
+    configureEntry();
+    updateComposer();
+    $("settings-note").hidden = false;
+    $("settings-note").textContent = result.message || "配置已保存。";
+    if (result.applied && health.keys_ready) {
+      toast("模型配置已生效");
+      if (client.identity.mode === "token") {
+        $("settings-dialog").close();
+        await enterApp(await client.json("/api/state"));
+      } else {
+        $("settings-dialog").close();
+        $("username-input").focus();
+      }
+    }
+  } catch (error) {
+    setError("settings-error", error.message);
+  } finally {
+    setButtonBusy($("settings-save"), false);
+  }
+}
+
+async function testSettings() {
+  setError("settings-error");
+  $("settings-note").hidden = true;
+  setButtonBusy($("settings-test"), true);
+  try {
+    const result = await client.testSettings(collectSettings());
+    $("settings-note").hidden = false;
+    $("settings-note").textContent =
+      `主对话：${result.chat.ok ? "可用" : "失败"} — ${result.chat.message}\n`
+      + `Embedding：${result.embedding.ok ? "可用" : "失败"} — ${result.embedding.message}`;
+  } catch (error) {
+    setError("settings-error", error.message);
+  } finally {
+    setButtonBusy($("settings-test"), false);
+  }
+}
+
+function showPersonaPreview(preview, content, filename) {
+  pendingPersonaContent = content;
+  personaFilename = filename;
+  $("persona-preview-name").textContent = preview.name || "未命名角色";
+  $("persona-preview-detail").textContent =
+    `${preview.format} · ${preview.traits} 条特质 · ${preview.greeting} 条开场白 · ${preview.world_count} 条世界书\n`
+    + (preview.identity || "");
+  $("persona-preview-warnings").replaceChildren(...(preview.warnings || []).map(text =>
+    element("li", "whitespace-pre-wrap", "· " + text)));
+  setError("persona-preview-error");
+  $("persona-preview-dialog").showModal();
+}
+
+async function handlePersonaFile(file) {
+  if (!file) return;
+  if (file.size > 1_600_000) { toast("人格卡片太大（上限 1.5 MB）"); return; }
+  try {
+    const content = await file.text();
+    showPersonaPreview(await client.personaPreview(file.name, content), content, file.name);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function confirmPersonaImport(event) {
+  event.preventDefault();
+  setError("persona-preview-error");
+  setButtonBusy($("persona-confirm"), true);
+  try {
+    const result = await client.personaImport(personaFilename, pendingPersonaContent);
+    $("persona-preview-dialog").close();
+    await refreshState();
+    toast([result.summary, result.world].filter(Boolean).join(" · "));
+  } catch (error) {
+    setError("persona-preview-error", error.message);
+  } finally {
+    setButtonBusy($("persona-confirm"), false);
+  }
+}
+
+async function exportPersona() {
+  try {
+    const response = await client.request("/api/persona/export");
+    const blob = await response.blob();
+    const name = String(state?.name || "personality").replace(/[\\/:*?"<>|]/g, "_");
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${name}-personality.json`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (error) {
+    toast(error.message);
+  }
 }
 
 function showEntry(message = "") {
@@ -188,6 +380,8 @@ function resetSession() {
   $("stop").hidden = true;
   $("send").hidden = false;
   $("toast").hidden = true;
+  pendingPersonaContent = "";
+  personaFilename = "";
   setButtonBusy($("legacy-claim-confirm"), false);
   setError("legacy-claim-error");
   updateComposer();
@@ -221,6 +415,10 @@ async function boot() {
           const user = await client.me();
           $("username-input").value = user.username;
           if (!setupMode) {
+            if (!health.keys_ready) {
+              showEntry("请先配置模型 API Key，再开始聊天。");
+              return;
+            }
             await enterApp(await client.json("/api/state"));
             return;
           }
@@ -243,6 +441,11 @@ async function boot() {
 
 async function login() {
   if (loginBusy || !health) return;
+  if (!health.keys_ready) {
+    setError("entry-error", "请先配置模型 API Key，再创建账号或登录。");
+    openSettings();
+    return;
+  }
   const username = $("username-input").value.trim();
   const password = $("password-input").value;
   if (!username || !password) { setError("entry-error", "请填写账号和密码。"); return; }
@@ -345,6 +548,11 @@ async function claimLegacy() {
 
 function renderState(data) {
   state = data;
+  const herName = String(data.name || "头像");
+  for (const id of ["entry-avatar", "header-avatar"]) {
+    const img = $(id);
+    if (img) img.alt = herName;
+  }
   $("world-badge").textContent = Number(data.world_count || 0);
   $("world-summary").textContent = Number(data.world_count || 0) + " 条设定";
   $("profile-summary").textContent = displayMemoryText(data.profile || "还没有记录。");
@@ -711,8 +919,8 @@ function renderRecall(holder, entries) {
 }
 
 function updateComposer() {
-  input.disabled = greetingBusy || $("app-shell").hidden;
-  $("send").disabled = busy || greetingBusy || !input.value.trim();
+  input.disabled = greetingBusy || $("app-shell").hidden || !health?.keys_ready;
+  $("send").disabled = busy || greetingBusy || !input.value.trim() || !health?.keys_ready;
   $("send").hidden = busy;
   $("stop").hidden = !busy;
   $("composer").setAttribute("aria-busy", String(busy));
@@ -721,6 +929,11 @@ function updateComposer() {
 async function sendMessage() {
   const text = input.value.trim();
   if (!text || busy || greetingBusy || $("app-shell").hidden) return;
+  if (!health?.keys_ready) {
+    toast("请先在设置里配置模型 API Key");
+    openSettings();
+    return;
+  }
   const epoch = client.epoch;
   input.value = "";
   input.style.height = "";
@@ -880,6 +1093,18 @@ for (const [label, command] of commands) {
 }
 
 $("login-form").addEventListener("submit", event => { event.preventDefault(); login(); });
+$("settings-open").addEventListener("click", openSettings);
+$("entry-settings-open").addEventListener("click", openSettings);
+$("settings-form").addEventListener("submit", saveSettings);
+$("settings-test").addEventListener("click", testSettings);
+$("persona-import").addEventListener("click", () => $("persona-file").click());
+$("persona-file").addEventListener("change", event => {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  handlePersonaFile(file);
+});
+$("persona-preview-form").addEventListener("submit", confirmPersonaImport);
+$("persona-export").addEventListener("click", exportPersona);
 $("legacy-claim-form").addEventListener("submit", event => { event.preventDefault(); claimLegacy(); });
 $("legacy-claim-dismiss").addEventListener("click", () => $("legacy-claim-dialog").close());
 $("entry-retry").addEventListener("click", () => { client.cancelPending(); boot(); });

@@ -18,6 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from app import config
 from app.controllers.chat_controller import router
 from app.controllers.auth_controller import router as auth_router
+from app.controllers.persona_controller import router as persona_router
+from app.controllers.settings_controller import router as settings_router
 from app.log import get
 from app.services.chat_service import ChatService
 
@@ -116,7 +118,8 @@ class HoldUserServiceMiddleware:
         from app.services import auth, registry
 
         path = scope.get("path", "")
-        if scope["type"] != "http" or not path.startswith("/api/") or path.startswith("/api/auth/"):
+        if scope["type"] != "http" or not path.startswith("/api/") or path.startswith("/api/auth/") \
+                or path.startswith("/api/settings"):
             return await self.app(scope, receive, send)
         request = Request(scope)
         uid = ""
@@ -162,6 +165,8 @@ async def _revalidate_static(request: Request, call_next):
 
 app.include_router(router)
 app.include_router(auth_router)
+app.include_router(settings_router)
+app.include_router(persona_router)
 app.mount("/static", StaticFiles(directory=config.VIEW_DIR), name="static")
 
 

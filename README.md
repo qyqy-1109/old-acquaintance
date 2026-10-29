@@ -54,9 +54,16 @@ OpenAI 兼容模型 · embedding · TTS · 高德 · 情绪判定
 ```bash
 pip install -r requirements.txt
 
-cp .env.example .env      # 填入自己的 key；.env 不进版本库
 python web.py             # → http://127.0.0.1:8765
 ```
+
+首次打开会按顺序引导：
+
+1. 配置模型：填写主对话与 embedding 的 API 地址/Key，可先点“测试连接”。
+2. 创建本机账号（密码至少 8 位）。
+3. 可选：在「画像与人设」页导入人格卡片；不导入就使用默认角色。
+
+也可以继续用手工 `.env`（模板见 `.env.example`）；**真实环境变量 > `DATA_DIR/settings.json` > `.env`**。从网页保存的配置写在 `DATA_DIR/settings.json`，不会回写 `.env`，也不会被提交到仓库。
 
 命令行版与网页版共用同一套 Service：
 
@@ -73,10 +80,19 @@ python openai_hello.py
 | `WB_API_KEY` / `WB_BASE_URL` | 后台任务（提炼、摘要、画像、开场白） |
 | `WB_CHAT_API_KEY` / `WB_CHAT_BASE_URL` | 主对话；留空复用 `WB_API_KEY` |
 | `WB_EMBED_API_KEY` / `WB_EMBED_BASE_URL` | embedding；缺了记忆召回会瘫痪 |
-| `WB_MODEL` / `WB_EMBED_MODEL` | 模型名 |
+| `WB_MODEL` / `WB_EMBED_MODEL` / `WB_EMBED_DIMENSIONS` | 模型名与向量维度 |
 
 可选能力：`WB_AMAP_KEY`（天气/附近）、`WB_EMOTION_*`（情绪）、`WB_TTS_*`（语音）。
 完整列表见 [`.env.example`](.env.example) 与 [`docs/技术栈.md`](docs/技术栈.md)。
+
+### 人格卡片
+
+在「画像与人设」页可以导入：
+
+- 旧识原生 JSON（`{"current": {...}}` 或扁平人设对象）；
+- SillyTavern / character card v2 JSON（`{"spec": "chara_card_v2", "data": {...}}`）。
+
+导入前会显示名字、特质数、开场白数和世界书条数；确认后旧人格进入历史，可回滚。角色卡里的 `character_book` 会一并写入世界书；`mes_example` 不会直接注入对话。当前不支持 PNG 角色卡。
 
 ### Docker
 
@@ -86,7 +102,8 @@ docker run -p 8765:8765 --env-file .env -v wb-data:/data \
   -e WB_AUTH_REQUIRED=1 jiushi
 ```
 
-数据卷必须挂出来：记忆库、人设、画像、世界书、日志都在 `/data`。
+数据卷必须挂出来：记忆库、人设、画像、世界书、设置与日志都在 `/data`。
+如果从**局域网/远程**打开首次设置页，管理接口默认会拒绝；请设置 `WB_ADMIN_TOKEN` 并让浏览器带上管理令牌，或先在服务器本机完成初始化。
 
 ---
 
@@ -102,6 +119,7 @@ npm run test:frontend
 
 # 其他离线回归
 python -m unittest tests.test_password_auth tests.test_identity_transport tests.test_frontend_contract
+python -m unittest tests.test_settings_and_persona
 ```
 
 评测会真实调用模型，需要有效密钥：
@@ -137,7 +155,8 @@ docs/               架构、技术栈、设计决策与调研
 
 ## 安全与隐私
 
-- `.env`、数据库、日志、用户目录、评测结果都被 `.gitignore` 忽略；**不要把 `.env` 提交到仓库**。
+- `.env`、`DATA_DIR/settings.json`、数据库、日志、用户目录、评测结果都被 `.gitignore` 忽略；**不要把密钥提交到仓库**。
+- 网页设置只在本机/管理员可达；真实环境变量注入的 Key 在页面上只读。
 - 默认只监听 `127.0.0.1`，适合本机使用。
 - **对外提供服务前必须设置 `WB_AUTH_REQUIRED=1`**。在还没有账号的阶段，未强制鉴权的业务接口是敞开的。
 - Docker 默认监听 `0.0.0.0`，只应在受信任的网络中运行，或放在带鉴权的反向代理后。
@@ -149,7 +168,9 @@ docs/               架构、技术栈、设计决策与调研
 
 - 这是一个**单机 SQLite** 项目，没有做多进程并发写与水平扩展。
 - 默认测试用假模型验证机制；真实模型下的记忆质量、自然度和 TTS 效果需要用自己的密钥复测。
+- 人格卡片暂不支持 PNG 内嵌元数据；SillyTavern 的 `mes_example` 和扩展字段不会原样注入。
 - 天气、附近地点、情绪判定依赖第三方服务；未配置时自动关闭，不会编造结果。
+- 语音默认开启并复用 embedding Key 走千问 TTS；如果 embedding 不是千问，请设置 `WB_TTS_ENABLED=0` 或单独配置 `WB_TTS_API_KEY`。
 - 评测分数受模型随机性和用例污染影响；判断改动是否退化应看 `--repeat`，不要只看单次。
 - 设计取舍与踩坑记录见 [`docs/DECISIONS.md`](docs/DECISIONS.md)。
 

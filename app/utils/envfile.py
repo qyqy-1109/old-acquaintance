@@ -23,18 +23,18 @@ import os
 _PREFIX = "[envfile]"
 
 
-def load(path: str) -> int:
-    """把 `.env` 读进 `os.environ`（**不覆盖已存在的**）。返回设了几个变量。"""
+def read(path: str) -> dict[str, str]:
+    """Parse `.env` into a dict without touching `os.environ`."""
     try:
         with open(path, encoding="utf-8") as f:
             lines = f.readlines()
     except FileNotFoundError:
-        return 0                     # 没配 .env 是正常情况，算不上错误
+        return {}
     except Exception as exc:
         print(f"{_PREFIX} 读取 {path} 失败（忽略，继续用环境变量）：{exc}")
-        return 0
+        return {}
 
-    n = 0
+    values: dict[str, str] = {}
     for raw in lines:
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -51,6 +51,15 @@ def load(path: str) -> int:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def load(path: str) -> int:
+    """把 `.env` 读进 `os.environ`（**不覆盖已存在的**）。返回设了几个变量。"""
+    values = read(path)
+    n = 0
+    for key, value in values.items():
         if key in os.environ:
             continue                 # 铁律：已存在的环境变量优先
         os.environ[key] = value

@@ -17,9 +17,15 @@ from urllib.parse import unquote
 # 所以部署时用真正的环境变量覆盖 `.env` 是安全的、也是推荐的。
 # 必须放在任何 `os.environ.get` 之前。
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Values injected by the deployment must never be replaced by the settings page.
+# Empty variables are treated as absent so a fresh container can still use the UI.
+_REAL_ENV_KEYS = frozenset(key for key, value in os.environ.items() if value)
+_ENV_FILE = os.path.join(_BASE, ".env")
+_ENVFILE_VALUES: dict[str, str] = {}
 try:
-    from app.utils.envfile import load as _load_env
-    _load_env(os.path.join(_BASE, ".env"))
+    from app.utils.envfile import load as _load_env, read as _read_env
+    _ENVFILE_VALUES = _read_env(_ENV_FILE)
+    _load_env(_ENV_FILE)
 except Exception as _exc:            # 加载失败不该让整个进程起不来
     print(f"[config] .env 加载失败（继续只用环境变量）：{_exc}")
 
@@ -31,6 +37,20 @@ VIEW_DIR = os.path.join(BASE_DIR, "app", "views")
 # 数据目录不存在就建出来。不然启动会崩在"写 personality.json 失败"上，
 # 报错指向的是文件路径，看不出真实原因是目录不存在，很费时间。
 os.makedirs(DATA_DIR, exist_ok=True)
+
+
+def settings_path() -> str:
+    """Web 设置页写入的运行时配置；真实环境变量仍然优先。"""
+    return os.path.join(DATA_DIR, "settings.json")
+
+
+from app.utils import settings_store as _settings_store  # noqa: E402
+
+SETTINGS_PATH = settings_path()
+_SETTINGS_VALUES: dict[str, str] = _settings_store.load(SETTINGS_PATH)
+for _key, _value in _SETTINGS_VALUES.items():
+    if _key not in _REAL_ENV_KEYS and _value:
+        os.environ[_key] = _value
 
 
 def data_path(name: str) -> str:
@@ -95,8 +115,9 @@ def user_data_dir(user_id: str) -> str:
 # mimo 主对话」，两批不要直接比。
 # 要试别的组合改环境变量就行：WB_API_KEY / WB_BASE_URL。
 # ⚠ 密钥值在项目根的 `.env`（不进版本库），这里**不再有明文默认值**（#064）。
-API_KEY = os.environ.get("WB_API_KEY") or ""
-BASE_URL = os.environ.get("WB_BASE_URL") or "https://api.xiaomimimo.com/v1"
+API_KEY = os.environ.get("WB_API_KEY") or os.environ.get("WB_CHAT_API_KEY") or ""
+BASE_URL = (os.environ.get("WB_BASE_URL") or os.environ.get("WB_CHAT_BASE_URL")
+            or "https://api.xiaomimimo.com/v1")
 
 # embedding 单独一套：小米那个端点**没有 embedding 接口**（连 /embeddings 路径都是 404），
 # 换过去记忆系统的召回会直接瘫痪。
@@ -112,7 +133,7 @@ EMBED_BASE_URL = os.environ.get("WB_EMBED_BASE_URL") or "https://maas.qianwenaia
 # 否则出问题分不清是谁的锅（这个坑踩过——把提炼一起换成 qwen3.8-flash 时
 # 分数从 89% 掉到 40%，一度误判成聊天模型的问题）。
 CHAT_API_KEY = os.environ.get("WB_CHAT_API_KEY") or ""
-CHAT_BASE_URL = os.environ.get("WB_CHAT_BASE_URL") or "https://api.xiaomimimo.com/v1"
+CHAT_BASE_URL = os.environ.get("WB_CHAT_BASE_URL") or BASE_URL
 
 # 关思考的写法各供应商不一样，所以按**参数族名**给，不用布尔（旧供应商名当别名保留）：
 #   "off"              不关 ← **默认**
@@ -142,7 +163,7 @@ STREAM = True                                      # True=流式逐字输出
 # 提到 2048 之后这类空回答消失，代价是 completion 最多翻倍。
 MAX_TOKENS = 2048
 
-PROFILE_MODEL = os.environ.get("WB_PROFILE_MODEL") or "mimo-v2.6-flash"
+PROFILE_MODEL = os.environ.get("WB_PROFILE_MODEL") or MODEL
 PROFILE_EVERY = 5                                  # 每多少轮做一次画像分析
 AUTO_EVOLVE_PERSONALITY = True                     # 退出时根据对话自动微调性格模板
 GREETING = True                                    # 启动时是否打一句开场白
@@ -150,7 +171,7 @@ GREETING = True                                    # 启动时是否打一句开
 # 也是后台活（不思考、1 秒左右），只在进程启动后第一次要开场白时生成一次，之后缓存复用。
 # 记忆还是空的时候会自动退回 personality.json 里备好的固定开场白。
 GREETING_USE_MEMORY = True
-GREETING_MODEL = os.environ.get("WB_GREETING_MODEL") or "mimo-v2.6-flash"
+GREETING_MODEL = os.environ.get("WB_GREETING_MODEL") or MODEL
 
 # 每轮把当前时间注入上下文，让她知道「现在」是什么时候。
 # 配套的两件事都在 app/utils/clock.py 里：相对时间在写入时换算成绝对日期，
@@ -194,7 +215,7 @@ TTS_TIMEOUT = int(os.environ.get("WB_TTS_TIMEOUT") or 30)
 #   glm-4.5-air   思考关      0.9s，  最快，但把该进世界书的内容全塞进 facts，世界书会空掉
 # 所以选 glm-5.2 + 关思考。注意 glm-5.3 / 5.3-flash / 5.3-flashx 这三个不支持关思考
 # （服务端报 1210），llmjson 里做了兜底：关不掉就退回默认行为，不会报错。
-EXTRACT_MODEL = os.environ.get("WB_EXTRACT_MODEL") or "mimo-v2.6-flash"
+EXTRACT_MODEL = os.environ.get("WB_EXTRACT_MODEL") or MODEL
 NO_THINK = True                                    # 后台任务关掉思考链路
 
 WINDOW = 10                                        # 滑动窗口：送进模型的最近轮数
@@ -353,4 +374,94 @@ _MISSING_KEYS = [
 if _MISSING_KEYS:
     print("[config] [!] 缺少必需的密钥，相关功能会失败：\n  - "
           + "\n  - ".join(_MISSING_KEYS)
-          + "\n  把 .env.example 复制成 .env 并填上即可（密钥不需要写进代码）。")
+          + "\n  把 .env.example 复制成 .env 并填上即可（也可以启动后在网页里配置）。")
+
+
+def keys_ready() -> bool:
+    """主对话和 embedding 都可用，才允许真正发起对话。"""
+    return bool((CHAT_API_KEY or API_KEY) and EMBED_API_KEY)
+
+
+def _key_source(key: str) -> str:
+    if not os.environ.get(key):
+        return "default" if key in _settings_store.DEFAULTS else "missing"
+    if key in _REAL_ENV_KEYS:
+        return "env"
+    if _SETTINGS_VALUES.get(key):
+        return "settings"
+    if _ENVFILE_VALUES.get(key):
+        return "envfile"
+    return "missing"
+
+
+def keys_status() -> dict:
+    """给设置页/健康检查用的脱敏状态；**绝不返回密钥明文**。"""
+    values: dict[str, dict] = {}
+    for key in _settings_store.KEYS:
+        value = os.environ.get(key) or ""
+        item = {"set": bool(value), "source": _key_source(key)}
+        if key in _settings_store.SECRET_KEYS:
+            item["masked"] = _settings_store.mask(value)
+        else:
+            item["value"] = value
+        values[key] = item
+    return {
+        "ready": keys_ready(),
+        "chat_ready": bool(CHAT_API_KEY or API_KEY),
+        "embed_ready": bool(EMBED_API_KEY),
+        "bg_ready": bool(API_KEY),
+        "chat_source": _key_source("WB_CHAT_API_KEY") if CHAT_API_KEY else _key_source("WB_API_KEY"),
+        "embed_source": _key_source("WB_EMBED_API_KEY"),
+        "bg_source": _key_source("WB_API_KEY") if os.environ.get("WB_API_KEY")
+        else _key_source("WB_CHAT_API_KEY"),
+        "managed_by_env": sorted(k for k in _settings_store.KEYS if k in _REAL_ENV_KEYS),
+        "editable": [k for k in _settings_store.KEYS if k not in _REAL_ENV_KEYS],
+        "values": values,
+        "defaults": dict(_settings_store.DEFAULTS),
+    }
+
+
+def reload() -> None:
+    """Re-read settings.json and refresh the module-level constants.
+
+    The caller is responsible for rebuilding cached ChatService instances; existing
+    instances keep their old clients until they are closed.
+    """
+    global API_KEY, BASE_URL, CHAT_API_KEY, CHAT_BASE_URL
+    global EMBED_API_KEY, EMBED_BASE_URL, MODEL, EMBED_MODEL, EMBED_DIMENSIONS, EXTRACT_MODEL
+    global PROFILE_MODEL, GREETING_MODEL
+    global TTS_API_KEY, AMAP_KEY, EMOTION_API_KEY, _SETTINGS_VALUES
+
+    values = _settings_store.load(settings_path())
+    for key in _settings_store.KEYS:
+        if key in _REAL_ENV_KEYS:
+            continue
+        if key in _ENVFILE_VALUES:
+            os.environ[key] = _ENVFILE_VALUES[key]
+        else:
+            os.environ.pop(key, None)
+    for key, value in values.items():
+        if key not in _REAL_ENV_KEYS and value:
+            os.environ[key] = value
+    _SETTINGS_VALUES = values
+
+    API_KEY = os.environ.get("WB_API_KEY") or os.environ.get("WB_CHAT_API_KEY") or ""
+    BASE_URL = (os.environ.get("WB_BASE_URL") or os.environ.get("WB_CHAT_BASE_URL")
+                or "https://api.xiaomimimo.com/v1")
+    EMBED_API_KEY = os.environ.get("WB_EMBED_API_KEY") or ""
+    EMBED_BASE_URL = (os.environ.get("WB_EMBED_BASE_URL")
+                      or "https://maas.qianwenaiapi.com/compatible-mode/v1")
+    CHAT_API_KEY = os.environ.get("WB_CHAT_API_KEY") or ""
+    CHAT_BASE_URL = os.environ.get("WB_CHAT_BASE_URL") or BASE_URL
+    MODEL = os.environ.get("WB_MODEL") or "mimo-v2.6-flash"
+    EMBED_MODEL = os.environ.get("WB_EMBED_MODEL") or "qwen3.7-text-embedding"
+    try:
+        EMBED_DIMENSIONS = int(os.environ.get("WB_EMBED_DIMENSIONS") or 2048)
+    except ValueError:
+        EMBED_DIMENSIONS = 2048
+    EXTRACT_MODEL = os.environ.get("WB_EXTRACT_MODEL") or MODEL
+    PROFILE_MODEL = os.environ.get("WB_PROFILE_MODEL") or MODEL
+    GREETING_MODEL = os.environ.get("WB_GREETING_MODEL") or MODEL
+    TTS_API_KEY = os.environ.get("WB_TTS_API_KEY") or EMBED_API_KEY
+    AMAP_KEY = os.environ.get("WB_AMAP_KEY") or ""
+    EMOTION_API_KEY = os.environ.get("WB_EMOTION_API_KEY") or ""

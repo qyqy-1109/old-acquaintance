@@ -22,9 +22,14 @@
       <span id="entry-status" class="flex items-center gap-2 text-xs text-muted" role="status"><span class="status-dot"></span><span>正在连接</span></span>
     </header>
     <section class="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-7 pb-16 pt-8 sm:px-8" aria-labelledby="entry-title">
-      <img class="mb-6 size-16 rounded-full border border-line object-cover" src="/static/assets/avatar-placeholder.png" alt="沈知夏头像占位图" width="64" height="64">
+      <img id="entry-avatar" class="mb-6 size-16 rounded-full border border-line object-cover" src="/static/assets/avatar-placeholder.png" alt="沈知夏头像占位图" width="64" height="64">
       <h1 id="entry-title" class="font-display text-[30px] leading-tight text-ink">旧识</h1>
       <p class="mt-3 text-base text-muted">欢迎回来，进来坐坐吧。</p>
+      <div id="entry-setup" class="mt-5 rounded-lg border border-line bg-white p-4" hidden>
+        <p class="font-medium">先连接模型</p>
+        <p class="mt-1 text-xs leading-6 text-muted">还没有配置 API Key。填好主对话和 embedding 后，就能创建账号并开始聊天。</p>
+        <button id="entry-settings-open" type="button" class="secondary-button mt-3"><i data-icon="key-round" aria-hidden="true"></i>配置模型</button>
+      </div>
       <form id="login-form" class="mt-7 space-y-5" novalidate>
         <div>
           <label for="username-input" class="mb-2 block text-sm font-medium">账号</label>
@@ -83,9 +88,10 @@
         </div>
         <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <button id="refresh-state" class="icon-button" type="button" aria-label="刷新状态" title="刷新状态"><i data-icon="refresh-cw" aria-hidden="true"></i></button>
+          <button id="settings-open" class="icon-button" type="button" aria-label="设置" title="设置"><i data-icon="key-round" aria-hidden="true"></i></button>
           <button id="tts-toggle" class="icon-button" type="button" aria-label="关闭语音" title="关闭语音" aria-pressed="true"><i data-icon="volume-2" aria-hidden="true"></i></button>
           <div class="mx-1 hidden h-5 w-px bg-line sm:block"></div>
-          <img class="size-9 rounded-full border border-line object-cover sm:size-10" src="/static/assets/avatar-placeholder.png" alt="沈知夏" width="40" height="40">
+          <img id="header-avatar" class="size-9 rounded-full border border-line object-cover sm:size-10" src="/static/assets/avatar-placeholder.png" alt="沈知夏" width="40" height="40">
         </div>
       </header>
       <main id="chat-view" class="relative flex min-h-0 flex-1 flex-col">
@@ -169,7 +175,14 @@
             </div>
           </section>
           <section id="view-profile" class="memory-section" aria-labelledby="profile-title" hidden>
-            <h2 id="profile-title" class="section-title">彼此更熟悉一点</h2>
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div><h2 id="profile-title" class="section-title">彼此更熟悉一点</h2><p class="mt-2 text-sm text-muted">人设可以导入常见角色卡；导入前的旧版本会留在历史里。</p></div>
+              <div class="flex shrink-0 flex-wrap gap-2">
+                <button id="persona-import" type="button" class="secondary-button"><i data-icon="plus" aria-hidden="true"></i>导入人格卡片</button>
+                <button id="persona-export" type="button" class="secondary-button"><i data-icon="arrow-down" aria-hidden="true"></i>导出</button>
+                <input id="persona-file" type="file" accept=".json,application/json" hidden>
+              </div>
+            </div>
             <div class="mt-8 grid gap-10 lg:grid-cols-2">
               <section class="min-w-0"><h3 class="mb-4 flex items-center gap-2 font-medium"><i data-icon="contact-round" class="text-brand" aria-hidden="true"></i>她眼中的你</h3><p id="profile-summary" class="whitespace-pre-wrap leading-7 text-muted"></p><details class="detail-block mt-6"><summary>完整画像</summary><pre id="profile-text" class="text-output mt-4"></pre></details></section>
               <section class="min-w-0 border-t border-line pt-8 lg:border-l lg:border-t-0 lg:pl-9 lg:pt-0"><h3 class="mb-4 flex items-center gap-2 font-medium"><i data-icon="house" class="text-rose" aria-hidden="true"></i>邻家的她</h3><p id="personality-summary" class="whitespace-pre-wrap leading-7 text-muted"></p><details class="detail-block mt-6"><summary>完整人设</summary><pre id="personality-text" class="text-output mt-4"></pre></details></section>
@@ -228,6 +241,51 @@
       <div class="mt-6 flex justify-end gap-3"><button type="button" class="secondary-button" data-close="life-pin-dialog">取消</button><button id="life-pin-submit" type="submit" class="primary-button">钉进牵挂</button></div>
     </form>
   </dialog>
+  <dialog id="settings-dialog" class="modal" aria-labelledby="settings-title">
+    <form id="settings-form" class="p-6 sm:p-7">
+      <div class="mb-5 flex items-center justify-between gap-4"><h2 id="settings-title" class="text-lg font-semibold">模型与密钥</h2><button type="button" class="icon-button small" data-close="settings-dialog" aria-label="关闭" title="关闭"><i data-icon="x" aria-hidden="true"></i></button></div>
+      <p id="settings-summary" class="whitespace-pre-wrap text-xs leading-6 text-muted">正在读取配置…</p>
+      <div class="mt-5 grid gap-4 sm:grid-cols-2">
+        <label class="block text-sm text-muted">主 API 地址<input id="settings-base" class="field mt-2 w-full" placeholder="https://api.example.com/v1"></label>
+        <label class="block text-sm text-muted">主 API Key<input id="settings-api-key" type="password" autocomplete="new-password" class="field mt-2 w-full" placeholder="留空保持不变"></label>
+        <label class="block text-sm text-muted">主对话地址（可选）<input id="settings-chat-base" class="field mt-2 w-full" placeholder="留空复用主 API 地址"></label>
+        <label class="block text-sm text-muted">主对话 Key（可选）<input id="settings-chat-key" type="password" autocomplete="new-password" class="field mt-2 w-full" placeholder="留空复用主 Key"></label>
+        <label class="block text-sm text-muted">Embedding 地址<input id="settings-embed-base" class="field mt-2 w-full" placeholder="https://api.example.com/v1"></label>
+        <label class="block text-sm text-muted">Embedding Key<input id="settings-embed-key" type="password" autocomplete="new-password" class="field mt-2 w-full" placeholder="留空保持不变"></label>
+      </div>
+      <details class="detail-block mt-5">
+        <summary>高级模型与可选服务</summary>
+        <div class="mt-4 grid gap-4 sm:grid-cols-2">
+          <label class="block text-sm text-muted">对话模型<input id="settings-model" class="field mt-2 w-full" placeholder="mimo-v2.6-flash"></label>
+          <label class="block text-sm text-muted">Embedding 模型<input id="settings-embed-model" class="field mt-2 w-full" placeholder="qwen3.7-text-embedding"></label>
+          <label class="block text-sm text-muted">Embedding 维度<input id="settings-embed-dimensions" class="field mt-2 w-full" inputmode="numeric" placeholder="2048；0 表示用服务端默认"></label>
+          <label class="block text-sm text-muted">后台提炼模型<input id="settings-extract-model" class="field mt-2 w-full" placeholder="与对话模型相同"></label>
+          <label class="block text-sm text-muted">高德 Key（可选）<input id="settings-amap-key" type="password" autocomplete="new-password" class="field mt-2 w-full" placeholder="天气与附近地点"></label>
+          <label class="block text-sm text-muted">情绪判定 Key（可选）<input id="settings-emotion-key" type="password" autocomplete="new-password" class="field mt-2 w-full" placeholder="不填则关闭"></label>
+          <label class="block text-sm text-muted">TTS Key（可选）<input id="settings-tts-key" type="password" autocomplete="new-password" class="field mt-2 w-full" placeholder="不填则复用 Embedding Key"></label>
+        </div>
+      </details>
+      <p id="settings-error" class="error-message mt-4" role="alert" hidden></p>
+      <p id="settings-note" class="mt-4 whitespace-pre-wrap text-xs leading-6 text-muted" hidden></p>
+      <div class="mt-6 flex flex-wrap justify-end gap-3">
+        <button id="settings-test" type="button" class="secondary-button">测试连接</button>
+        <button id="settings-save" type="submit" class="primary-button">保存</button>
+        <button type="button" class="secondary-button" data-close="settings-dialog">关闭</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="persona-preview-dialog" class="modal" aria-labelledby="persona-preview-title">
+    <form id="persona-preview-form" class="p-6 sm:p-7">
+      <div class="mb-5 flex items-center justify-between gap-4"><h2 id="persona-preview-title" class="text-lg font-semibold">导入人格卡片</h2><button type="button" class="icon-button small" data-close="persona-preview-dialog" aria-label="关闭" title="关闭"><i data-icon="x" aria-hidden="true"></i></button></div>
+      <p id="persona-preview-name" class="font-medium"></p>
+      <p id="persona-preview-detail" class="mt-2 whitespace-pre-wrap leading-7 text-muted"></p>
+      <ul id="persona-preview-warnings" class="mt-4 space-y-1 text-xs leading-6 text-muted"></ul>
+      <p id="persona-preview-error" class="error-message mt-4" role="alert" hidden></p>
+      <div class="mt-6 flex justify-end gap-3"><button type="button" class="secondary-button" data-close="persona-preview-dialog">取消</button><button id="persona-confirm" type="submit" class="primary-button">确认导入</button></div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" hidden><i data-icon="circle-check" aria-hidden="true"></i><span id="toast-text"></span><button id="toast-action" type="button" class="ml-2 font-medium underline underline-offset-4" hidden>播放</button></div>
   <noscript><p class="p-6 text-center">请启用 JavaScript 后使用旧识。</p></noscript>
 </body>

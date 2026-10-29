@@ -510,6 +510,123 @@ class Personality:
         traits.append(text)
         return self.evolve({"traits": traits}, reason="手动修改")
 
+    # ---------- 导入 / 导出（人格卡片） ----------
+    IMPORT_MAX_ITEMS = 12
+    IMPORT_MAX_ITEM = 300
+    IMPORT_MAX_TEXT = 4000
+    CORE_BEHAVIOR = (
+        "始终留在角色里：不解释「我在扮演」，也不提 AI／模型／提示词／设定",
+        "不编没发生过的事；不知道就直说不知道",
+        "不重复对方的原话，也不用书面腔和客服腔",
+    )
+
+    @classmethod
+    def _import_text(cls, value, limit: int = IMPORT_MAX_TEXT) -> str:
+        if value is None:
+            return ""
+        text = "".join(ch for ch in str(value) if ch >= " " or ch in "\n\t")
+        return text.strip()[:limit]
+
+    @classmethod
+    def _import_list(cls, value, limit: int = IMPORT_MAX_ITEMS,
+                     item_limit: int = IMPORT_MAX_ITEM) -> list[str]:
+        if value is None:
+            return []
+        items = value if isinstance(value, (list, tuple)) else [value]
+        out: list[str] = []
+        for item in items:
+            text = cls._import_text(cls._text_of(item), item_limit)
+            if text and text not in out:
+                out.append(text)
+            if len(out) >= limit:
+                break
+        return out
+
+    @staticmethod
+    def _import_self_attitude(value) -> dict:
+        base = {
+            "default": "「问这个干嘛，我就是我呀」",
+            "pressed": "「你要这么理解也行。反正陪着你聊的就是我呀」",
+            "fallback": "「对，我是 AI。但这不妨碍我记得我们聊过的事」",
+        }
+        if isinstance(value, dict):
+            for key in base:
+                text = Personality._import_text(value.get(key), 300)
+                if text:
+                    base[key] = text
+        return base
+
+    @staticmethod
+    def _import_scope(value) -> dict:
+        default = DEFAULT_PERSONALITY.get("scope") or {}
+        base = dict(default)
+        if isinstance(value, dict):
+            for key in ("can", "cannot"):
+                items = Personality._import_list(value.get(key), 8, 200)
+                if items:
+                    base[key] = items
+            boundary = Personality._import_text(value.get("boundary"), 800)
+            if boundary:
+                base["boundary"] = boundary
+        return base
+
+    def import_persona(self, data: dict, reason: str = "导入人格卡片") -> str:
+        """Replace the current persona with a validated card payload.
+
+        Unlike :meth:`evolve`, this does not run the Chinese/60-char evolution
+        guard: cards may be written in another language or use longer prose.  It
+        still clips fields, requires a name, snapshots history and writes atomically.
+        """
+        if not isinstance(data, dict):
+            raise ValueError("人格数据必须是对象")
+        name = self._import_text(data.get("name"), 80)
+        if not name:
+            raise ValueError("人格卡片缺少名字")
+        identity = self._import_text(data.get("identity"))
+        traits = self._import_list(data.get("traits"))
+        tone = self._import_text(data.get("tone"), self.IMPORT_MAX_ITEM)
+        values = self._import_list(data.get("values"))
+        behavior = list(self.CORE_BEHAVIOR)
+        for item in self._import_list(data.get("behavior")):
+            if item not in behavior:
+                behavior.append(item)
+        behavior = behavior[:self.IMPORT_MAX_ITEMS]
+        speech = self._import_list(data.get("speech_habits"))
+        if not any((identity, traits, tone, values, behavior, speech)):
+            raise ValueError("人格卡片没有可用的人设内容")
+
+        new = {
+            "name": name,
+            "identity": identity,
+            "traits": traits,
+            "tone": tone,
+            "values": values,
+            "behavior": behavior,
+            "speech_habits": speech,
+            "greeting": self._import_list(data.get("greeting"), 7, 200),
+            "origin": self._import_text(data.get("origin")),
+            "family": self._import_text(data.get("family")),
+            "daily_life": self._import_text(data.get("daily_life")),
+            "cares": self._import_list(data.get("cares")),
+            "favorite_places": self._import_list(data.get("favorite_places")),
+            "self_attitude": self._import_self_attitude(data.get("self_attitude")),
+            "scope": self._import_scope(data.get("scope")),
+            "version": int(self.data.get("version", 1)) + 1,
+            "updated_at": time.time(),
+        }
+        snapshot = dict(self.data)
+        self.history.append({"data": snapshot, "reason": reason, "ts": time.time()})
+        self.history = self.history[-20:]
+        self.data = new
+        self._save()
+        return (f"已导入「{name}」：{len(traits)} 条特质、"
+                f"{len(new['greeting'])} 条开场白")
+
+    def export_current(self) -> dict:
+        import json as _json
+
+        return _json.loads(_json.dumps(self.data, ensure_ascii=False))
+
     # ---------- 待确认的演化改动（T48） ----------
     # 为什么单独存一个文件、而不是塞进 personality.json：待确认是「还没定的事」，
     # 跟已生效的人设不是一回事；分开存也不用改动主文件的读写与迁移逻辑。

@@ -145,6 +145,26 @@ export class ApiClient {
     return data;
   }
 
+  async settings() {
+    return this.json("/api/settings");
+  }
+
+  async saveSettings(values, clear = []) {
+    return this.json("/api/settings", { method: "POST", body: { values, clear } });
+  }
+
+  async testSettings(values) {
+    return this.json("/api/settings/test", { method: "POST", body: { values } });
+  }
+
+  async personaPreview(filename, content) {
+    return this.json("/api/persona/preview", { method: "POST", body: { filename, content } });
+  }
+
+  async personaImport(filename, content) {
+    return this.json("/api/persona/import", { method: "POST", body: { filename, content } });
+  }
+
   async claimLegacy() {
     return this.json("/api/auth/legacy", { method: "POST" });
   }

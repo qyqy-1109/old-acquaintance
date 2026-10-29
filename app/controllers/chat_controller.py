@@ -88,7 +88,9 @@ def healthz(request: Request) -> dict:
         "account_setup_required": not auth.has_accounts(),
         "legacy_data_available": auth.data_available(config.DATA_DIR),
         "nickname_encoding": "percent-encoded",     # 前端据此拒绝未加载中文昵称修复的旧进程。
-        "keys_ready": bool(config.API_KEY and config.EMBED_API_KEY),
+        "keys_ready": config.keys_ready(),
+        "keys": config.keys_status(),
+        "first_run": (not config.keys_ready()) or (not auth.has_accounts()),
     }
 
 
@@ -242,7 +244,18 @@ def greeting(request: Request) -> dict:
     单独开一个接口，是为了跟 /api/state 分开——state 每轮对话后都会被拉一次，
     开场白不能跟着一起重新生成。
     """
-    return {"greeting": svc(request).greeting(force=True)}
+    from app import config
+
+    return {"greeting": svc(request).greeting(force=True),
+            "needs_setup": not config.keys_ready()}
+
+
+def _require_keys() -> None:
+    if not config.keys_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="模型尚未配置：请先在设置页填写主对话和 embedding 的 API Key。",
+        )
 
 
 def _quota_gate(request: Request) -> str:
@@ -264,6 +277,7 @@ def chat(body: ChatIn, request: Request) -> dict:
     """非流式一轮对话。"""
     from app.services import quota
 
+    _require_keys()
     uid = _quota_gate(request)
     try:
         out = svc(request).chat(body.message)
@@ -297,6 +311,7 @@ def chat_stream(body: ChatIn, request: Request) -> StreamingResponse:
 
     from app.services import quota
 
+    _require_keys()
     uid = _quota_gate(request)
     service = svc(request)
     t0 = time.perf_counter()

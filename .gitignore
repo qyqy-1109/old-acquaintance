@@ -12,6 +12,7 @@
 memory.db
 memory.db-wal
 memory.db-shm
+settings.json
 # 迁移/调参前留下的**记忆快照**（如 memory.db.bak-dim2048）：里面是真实对话，
 # 文件名不带 .db 后缀所以旧规则挡不住它们（#83 复核时发现，T64 补上）。
 memory.db.bak*

@@ -165,6 +165,31 @@ class WorldBook:
         self.store.add_world(text)
         return f"世界书已记下：{text}"
 
+    def import_entries(self, texts: list[str], source: str = "人格卡片",
+                       sync: bool = True) -> str:
+        """Bulk import from a persona card; save once, sync once."""
+        added = []
+        for raw in texts or []:
+            text = str(raw or "").strip()[:2000]
+            if not text or any(e["text"] == text for e in self.entries):
+                continue
+            self.entries.append({"text": text, "source": source, "ts": time.time()})
+            added.append(text)
+            if len(added) >= 50:
+                break
+        if not added:
+            return "没有新增世界书条目"
+        self._save()
+        if not sync:
+            return f"已导入 {len(added)} 条世界书（等待配置 embedding 后同步）"
+        try:
+            self.sync()
+        except Exception as exc:
+            # 向量库同步失败不该丢掉刚刚写入的文件；下次启动会再同步。
+            log.warning("导入世界书后同步失败（文件已保存）：%s: %s",
+                        type(exc).__name__, exc)
+        return f"已导入 {len(added)} 条世界书"
+
     def remove(self, index: int) -> str:
         if not (0 <= index < len(self.entries)):
             return f"没有第 {index + 1} 条"

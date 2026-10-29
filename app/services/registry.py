@@ -200,6 +200,31 @@ def close_all() -> None:
         _refs.clear()
 
 
+def reload_all() -> bool:
+    """Close every cached instance so the next request sees new settings.
+
+    Returns False when a request or background owner still holds an instance; the
+    caller should then leave the old services alone and tell the user to restart.
+    """
+    with _lock:
+        if any(count > 0 for count in _refs.values()):
+            return False
+        for svc in list(_services.values()):
+            try:
+                svc.close()
+            except Exception as exc:
+                log.error("重载时关闭实例失败：%s", exc)
+                return False
+        _services.clear()
+        _refs.clear()
+    return True
+
+
+def active_refs() -> int:
+    with _lock:
+        return sum(_refs.values())
+
+
 def count() -> int:
     with _lock:
         return len(_services)
