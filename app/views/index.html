@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#f7f8f6">
+  <title>旧识</title>
+  <link rel="icon" href="/static/assets/icons/house.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/assets/styles.css">
+  <script type="module" src="/static/js/app.js"></script>
+</head>
+<body class="bg-paper font-sans text-sm text-ink antialiased">
+  <a href="#message-input" class="skip-link">跳到消息输入</a>
+
+  <main id="entry-screen" class="flex min-h-dvh flex-col">
+    <header class="flex items-center justify-between px-6 py-6 sm:px-10">
+      <a href="/" class="flex items-center gap-2.5 font-medium" aria-label="旧识首页">
+        <span class="brand-mark"><i data-icon="house" aria-hidden="true"></i></span>
+        <span>旧识</span>
+      </a>
+      <span id="entry-status" class="flex items-center gap-2 text-xs text-muted" role="status"><span class="status-dot"></span><span>正在连接</span></span>
+    </header>
+    <section class="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-7 pb-16 pt-8 sm:px-8" aria-labelledby="entry-title">
+      <img class="mb-6 size-16 rounded-full border border-line object-cover" src="/static/assets/avatar-placeholder.png" alt="沈知夏头像占位图" width="64" height="64">
+      <h1 id="entry-title" class="font-display text-[30px] leading-tight text-ink">旧识</h1>
+      <p class="mt-3 text-base text-muted">欢迎回来，进来坐坐吧。</p>
+      <form id="login-form" class="mt-7 space-y-5" novalidate>
+        <div>
+          <label for="username-input" class="mb-2 block text-sm font-medium">账号</label>
+          <div class="input-wrap"><i data-icon="user-round" aria-hidden="true"></i><input id="username-input" name="username" type="text" maxlength="60" autocomplete="username" placeholder="你的账号" class="min-w-0 flex-1" required></div>
+        </div>
+        <div>
+          <label for="password-input" class="mb-2 block text-sm font-medium">密码</label>
+          <div class="input-wrap"><i data-icon="key-round" aria-hidden="true"></i><input id="password-input" name="password" type="password" maxlength="128" autocomplete="current-password" placeholder="你的密码" class="min-w-0 flex-1" required><button id="toggle-password" type="button" class="icon-button small" aria-label="显示密码" title="显示密码"><i data-icon="eye" aria-hidden="true"></i></button></div>
+        </div>
+        <div id="password-confirm-wrap" hidden>
+          <label for="password-confirm" class="mb-2 block text-sm font-medium">确认密码</label>
+          <div class="input-wrap"><i data-icon="key-round" aria-hidden="true"></i><input id="password-confirm" type="password" maxlength="128" autocomplete="new-password" placeholder="再次输入密码" class="min-w-0 flex-1"></div>
+          <p class="mt-2 text-xs text-muted">8 至 128 个字符</p>
+        </div>
+        <label id="inherit-default-wrap" class="flex items-start gap-2.5 text-xs leading-6 text-muted" hidden><input id="inherit-default" type="checkbox" class="mt-1 size-4 shrink-0 accent-brand"><span>关联我原来的世界书、时间轴和画像</span></label>
+        <div id="entry-error" class="error-message" role="alert" hidden></div>
+        <button id="login-submit" class="primary-button w-full justify-center" type="submit" disabled><span>正在连接</span><i data-icon="chevron-right" aria-hidden="true"></i></button>
+        <button id="entry-retry" type="button" class="secondary-button w-full justify-center" hidden><i data-icon="refresh-cw" aria-hidden="true"></i>重新连接</button>
+      </form>
+      <div class="mt-9 border-t border-line pt-5 text-xs text-faint">今天的故事，也慢慢说。</div>
+    </section>
+    <footer class="px-6 pb-6 text-center text-xs text-faint">旧识</footer>
+  </main>
+
+  <div id="app-shell" class="app-layout" hidden>
+    <button id="nav-backdrop" class="nav-backdrop" type="button" aria-label="关闭导航" hidden></button>
+    <aside id="sidebar" class="sidebar" aria-label="主导航" tabindex="-1">
+      <div class="flex h-20 items-center justify-between gap-2 px-6">
+        <button id="brand-home" class="brand-home flex min-h-11 items-center gap-2.5 text-left" type="button" aria-label="旧识，返回对话" title="返回对话"><span class="brand-mark"><i data-icon="house" aria-hidden="true"></i></span><span class="font-display text-lg">旧识</span></button>
+        <button id="nav-close" class="icon-button md:hidden" type="button" aria-label="关闭导航" title="关闭导航"><i data-icon="x" aria-hidden="true"></i></button>
+      </div>
+      <nav class="flex-1 space-y-1 px-3.5 pb-5 pt-5">
+        <button class="nav-item" type="button" data-view="chat" aria-current="page"><i data-icon="messages-square" aria-hidden="true"></i><span>对话</span><span id="chat-unread" class="nav-count" hidden>0</span></button>
+        <p class="px-3 pb-2 pt-8 text-xs text-faint">我们的记忆</p>
+        <button class="nav-item" type="button" data-view="relationship"><i data-icon="heart-pulse" aria-hidden="true"></i><span>我们的关系</span></button>
+        <button class="nav-item" type="button" data-view="world"><i data-icon="book-open" aria-hidden="true"></i><span>世界书</span><span id="world-badge" class="nav-count">0</span></button>
+        <button class="nav-item" type="button" data-view="slots"><i data-icon="list-tree" aria-hidden="true"></i><span>状态</span></button>
+        <button class="nav-item" type="button" data-view="timeline"><i data-icon="clock-3" aria-hidden="true"></i><span>时间轴</span></button>
+        <button class="nav-item" type="button" data-view="life"><i data-icon="circle-check" aria-hidden="true"></i><span>她的生活</span><span id="life-badge" class="nav-count">0</span></button>
+        <button class="nav-item" type="button" data-view="profile"><i data-icon="contact-round" aria-hidden="true"></i><span>画像与人设</span></button>
+        <button class="nav-item" type="button" data-view="care"><i data-icon="heart-pulse" aria-hidden="true"></i><span>记忆体检</span><span id="issue-badge" class="ml-auto size-2 rounded-full bg-rose" hidden></span></button>
+      </nav>
+      <div class="mx-5 border-t border-line py-4"><button id="service-details" class="flex w-full items-center gap-2 text-left text-xs text-muted" type="button" title="查看服务状态"><span class="status-dot"></span><span id="service-status">已连接</span><i data-icon="chevron-right" class="ml-auto" aria-hidden="true"></i></button></div>
+      <div class="flex items-center gap-3 border-t border-line px-5 py-5">
+        <span id="user-avatar" class="user-avatar" aria-hidden="true"></span>
+        <div class="min-w-0 flex-1"><p id="current-user" class="truncate font-medium"></p><p id="identity-kind" class="mt-0.5 text-xs text-muted"></p></div>
+        <button id="switch-identity" type="button" class="icon-button" aria-label="退出登录" title="退出登录"><i data-icon="log-out" aria-hidden="true"></i></button>
+      </div>
+    </aside>
+
+    <div class="flex min-h-0 min-w-0 flex-col">
+      <header class="flex h-20 shrink-0 items-center justify-between gap-4 border-b border-line bg-white px-4 sm:px-8 lg:px-10">
+        <div class="flex min-w-0 items-center gap-3">
+          <button id="nav-open" type="button" class="icon-button md:hidden" aria-label="打开导航" title="打开导航" aria-controls="sidebar" aria-expanded="false"><i data-icon="panel-left" aria-hidden="true"></i></button>
+          <div class="min-w-0"><h1 id="view-title" class="text-base font-semibold">对话</h1><p id="view-subtitle" class="mt-0.5 truncate text-xs text-muted"></p></div>
+        </div>
+        <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <button id="refresh-state" class="icon-button" type="button" aria-label="刷新状态" title="刷新状态"><i data-icon="refresh-cw" aria-hidden="true"></i></button>
+          <button id="tts-toggle" class="icon-button" type="button" aria-label="关闭语音" title="关闭语音" aria-pressed="true"><i data-icon="volume-2" aria-hidden="true"></i></button>
+          <div class="mx-1 hidden h-5 w-px bg-line sm:block"></div>
+          <img class="size-9 rounded-full border border-line object-cover sm:size-10" src="/static/assets/avatar-placeholder.png" alt="沈知夏" width="40" height="40">
+        </div>
+      </header>
+      <main id="chat-view" class="relative flex min-h-0 flex-1 flex-col">
+        <div id="log" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-7 sm:px-8 sm:py-10" role="log" aria-label="对话记录" aria-live="polite" aria-relevant="additions text"></div>
+        <button id="scroll-bottom" type="button" class="scroll-bottom icon-button" title="回到最新消息" aria-label="回到最新消息" hidden><i data-icon="arrow-down" aria-hidden="true"></i></button>
+        <div class="shrink-0 px-4 pb-4 pt-2 sm:px-8 sm:pb-6">
+          <form id="composer" class="composer mx-auto max-w-3xl">
+            <label for="message-input" class="sr-only">消息</label>
+            <textarea id="message-input" rows="1" maxlength="20000" placeholder="今天想聊些什么？" class="block max-h-40 min-h-14 w-full resize-none bg-transparent px-4 py-4 text-sm leading-6 outline-none sm:px-5" disabled></textarea>
+            <div class="flex items-center justify-between gap-3 px-3 pb-3 sm:px-4">
+              <div class="flex items-center gap-1.5">
+                <button id="command-open" type="button" class="icon-button small" aria-label="打开命令" title="打开命令"><i data-icon="command" aria-hidden="true"></i></button>
+                <button id="feedback-open" type="button" class="icon-button small" aria-label="她说错了" title="她说错了" disabled><i data-icon="message-square-warning" aria-hidden="true"></i></button>
+              </div>
+              <button id="send" type="submit" class="send-button" aria-label="发送消息" title="发送消息" disabled><i data-icon="arrow-up" aria-hidden="true"></i></button>
+              <button id="stop" type="button" class="send-button" aria-label="停止回复" title="停止回复" hidden><i data-icon="square" aria-hidden="true"></i></button>
+            </div>
+          </form>
+        </div>
+      </main>
+      <main id="memory-view" class="min-h-0 flex-1 overflow-y-auto overscroll-contain" hidden>
+        <div class="mx-auto max-w-5xl px-5 py-8 sm:px-10 sm:py-10 lg:px-12">
+          <section id="view-relationship" class="memory-section" aria-labelledby="relationship-title" hidden>
+            <h2 id="relationship-title" class="section-title">我们的关系</h2>
+            <p class="mt-2 text-sm text-muted">记得彼此答应过的事，也留下做到了、没做到的经过。</p>
+            <div class="mt-8 rounded-lg border border-line bg-white p-5 sm:p-6">
+              <p class="text-xs text-muted">我们现在</p>
+              <p id="relationship-stage" class="mt-2 text-lg font-medium">正在读取…</p>
+              <p id="relationship-call" class="mt-2 text-sm text-muted"></p>
+              <p id="relationship-detail" class="mt-2 text-xs text-muted"></p>
+              <p id="relationship-why" class="mt-4 whitespace-pre-wrap leading-7"></p>
+            </div>
+            <div class="mt-8 grid gap-10 lg:grid-cols-2">
+              <section class="min-w-0">
+                <h3 class="mb-4 flex items-center gap-2 font-medium"><i data-icon="circle-check" class="text-brand" aria-hidden="true"></i>她答应过的事</h3>
+                <div id="relationship-promises" class="divide-y divide-line"></div>
+                <form id="relationship-form" class="mt-6 space-y-3">
+                  <label for="relationship-input" class="block text-sm text-muted">记下一个承诺</label>
+                  <textarea id="relationship-input" rows="2" maxlength="60" class="field w-full resize-y" placeholder="她答应过你的事"></textarea>
+                  <label for="relationship-due" class="block text-sm text-muted">约定时间（可留空）</label>
+                  <input id="relationship-due" type="datetime-local" class="field w-full">
+                  <p class="text-xs leading-6 text-muted">到时间只提醒待确认；做到了再记完成，没做到要留下原因。</p>
+                  <button id="relationship-add" type="submit" class="primary-button"><i data-icon="plus" aria-hidden="true"></i>记下承诺</button>
+                </form>
+              </section>
+              <section class="min-w-0 border-t border-line pt-8 lg:border-l lg:border-t-0 lg:pl-9 lg:pt-0">
+                <h3 class="mb-4 flex items-center gap-2 font-medium"><i data-icon="clock-3" class="text-rose" aria-hidden="true"></i>关系记录（越靠上越新）</h3>
+                <div id="relationship-events" class="space-y-2"></div>
+              </section>
+            </div>
+          </section>
+          <section id="view-world" class="memory-section" aria-labelledby="world-title" hidden>
+            <div class="flex items-start justify-between gap-4"><div><h2 id="world-title" class="section-title">共同的世界</h2><p id="world-summary" class="mt-2 text-sm text-muted">0 条设定</p></div><button id="world-tidy" type="button" class="secondary-button"><i data-icon="wand-sparkles" aria-hidden="true"></i>整理</button></div>
+            <div id="world-list" class="mt-8 divide-y divide-line border-y border-line"></div>
+            <form id="world-form" class="mt-7 flex flex-col gap-3 sm:flex-row sm:items-start">
+              <label for="world-input" class="sr-only">新的世界书设定</label>
+              <textarea id="world-input" rows="2" maxlength="2000" class="field min-h-20 flex-1 resize-y" placeholder="写下一条值得记住的设定"></textarea>
+              <button id="world-add" type="submit" class="primary-button shrink-0 justify-center"><i data-icon="plus" aria-hidden="true"></i>添加设定</button>
+            </form>
+          </section>
+          <section id="view-slots" class="memory-section" aria-labelledby="slots-title" hidden><h2 id="slots-title" class="section-title">近况与约定</h2><pre id="slots-output" class="text-output mt-7"></pre></section>
+          <section id="view-timeline" class="memory-section" aria-labelledby="timeline-title" hidden><h2 id="timeline-title" class="section-title">我们的时间轴</h2><pre id="timeline-output" class="text-output mt-7"></pre></section>
+          <section id="view-life" class="memory-section" aria-labelledby="life-title" hidden>
+            <h2 id="life-title" class="section-title">她做过什么</h2>
+            <p class="mt-2 text-sm text-muted"><b>她最近报备的</b>才是准的——那是她亲口告诉你的话。<b>每条都标出处</b>：流水标「她自己选的／兜底候选」，编剧层（手写在 <code>life.json</code>）只给<b>维度</b>，每一格具体做什么由她自己定（所以你看到的细节，比如是哪种花，不在编剧层里）；最下面那份「此刻」是系统按时间和编剧层推演的，<b>只当氛围</b>，跟她说过的话对不上时以她说的为准。</p>
+            <div class="mt-8 grid gap-10 lg:grid-cols-2">
+              <section class="min-w-0">
+                <h3 class="mb-4 flex items-center gap-2 font-medium"><i data-icon="messages-square" class="text-brand" aria-hidden="true"></i>她最近报备的（她亲口说的，越靠上越新）</h3>
+                <div id="life-said" class="space-y-2"></div>
+                <h3 class="mb-4 mt-8 flex items-center gap-2 font-medium"><i data-icon="clock-3" class="text-brand" aria-hidden="true"></i>生活流水（越靠上越新）</h3>
+                <div id="life-events" class="space-y-2"></div>
+                <h3 class="mb-4 mt-8 flex items-center gap-2 font-medium"><i data-icon="circle-check" class="text-muted" aria-hidden="true"></i>她的日常设定 · 此刻与统计（自动推演，只当氛围）</h3>
+                <p id="life-state" class="whitespace-pre-wrap leading-7 text-muted">正在读取…</p>
+              </section>
+              <section class="min-w-0 border-t border-line pt-8 lg:border-l lg:border-t-0 lg:pl-9 lg:pt-0">
+                <h3 class="mb-4 flex items-center gap-2 font-medium"><i data-icon="book-open" class="text-rose" aria-hidden="true"></i>她的编剧层（<code>life.json</code>）</h3>
+                <p id="life-script" class="whitespace-pre-wrap leading-7 text-muted"></p>
+                <h3 class="mb-4 mt-8 flex items-center gap-2 font-medium"><i data-icon="user-round" class="text-rose" aria-hidden="true"></i>她的经历（记忆里她视角的条目）</h3>
+                <div id="life-exp" class="space-y-2"></div>
+              </section>
+            </div>
+          </section>
+          <section id="view-profile" class="memory-section" aria-labelledby="profile-title" hidden>
+            <h2 id="profile-title" class="section-title">彼此更熟悉一点</h2>
+            <div class="mt-8 grid gap-10 lg:grid-cols-2">
+              <section class="min-w-0"><h3 class="mb-4 flex items-center gap-2 font-medium"><i data-icon="contact-round" class="text-brand" aria-hidden="true"></i>她眼中的你</h3><p id="profile-summary" class="whitespace-pre-wrap leading-7 text-muted"></p><details class="detail-block mt-6"><summary>完整画像</summary><pre id="profile-text" class="text-output mt-4"></pre></details></section>
+              <section class="min-w-0 border-t border-line pt-8 lg:border-l lg:border-t-0 lg:pl-9 lg:pt-0"><h3 class="mb-4 flex items-center gap-2 font-medium"><i data-icon="house" class="text-rose" aria-hidden="true"></i>邻家的她</h3><p id="personality-summary" class="whitespace-pre-wrap leading-7 text-muted"></p><details class="detail-block mt-6"><summary>完整人设</summary><pre id="personality-text" class="text-output mt-4"></pre></details></section>
+            </div>
+          </section>
+          <section id="view-care" class="memory-section" aria-labelledby="care-title" hidden>
+            <div class="flex items-start justify-between gap-4"><div><h2 id="care-title" class="section-title">记忆体检</h2><p id="care-summary" class="mt-2 text-sm text-muted"></p></div><button id="memory-check" type="button" class="secondary-button"><i data-icon="heart-pulse" aria-hidden="true"></i>检查</button></div>
+            <ul id="memory-issues" class="mt-6 space-y-2"></ul>
+            <pre id="care-output" class="text-output mt-7"></pre>
+            <details class="detail-block mt-8"><summary>运行状态</summary><dl id="model-details" class="mt-4 divide-y divide-line"></dl></details>
+          </section>
+          <p id="memory-error" class="error-message mt-6" role="alert" hidden></p>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="legacy-claim-dialog" class="modal" aria-labelledby="legacy-claim-title">
+    <form id="legacy-claim-form" class="p-6 sm:p-7">
+      <div class="mb-5 flex items-center justify-between gap-4"><h2 id="legacy-claim-title" class="text-lg font-semibold">发现以前的记忆</h2><button id="legacy-claim-dismiss" type="button" class="icon-button small" aria-label="暂不认领" title="暂不认领"><i data-icon="x" aria-hidden="true"></i></button></div>
+      <p id="legacy-claim-message" class="whitespace-pre-wrap leading-7 text-muted">这里有一套还没有绑定账号的旧世界书、时间轴和画像。要把它们接回这个账号吗？</p>
+      <p id="legacy-claim-error" class="error-message mt-4" role="alert" hidden></p>
+      <div class="mt-6 flex justify-end gap-3"><button type="button" class="secondary-button" data-close="legacy-claim-dialog">暂不认领</button><button id="legacy-claim-confirm" type="submit" class="primary-button">认领这些旧记忆</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="feedback-dialog" class="modal" aria-labelledby="feedback-title">
+    <form id="feedback-form" class="p-6 sm:p-7">
+      <div class="mb-5 flex items-center justify-between gap-4"><h2 id="feedback-title" class="text-lg font-semibold">她说错了</h2><button type="button" class="icon-button small" data-close="feedback-dialog" aria-label="关闭" title="关闭"><i data-icon="x" aria-hidden="true"></i></button></div>
+      <label for="feedback-note" class="mb-2 block text-sm text-muted">备注（可留空）</label>
+      <textarea id="feedback-note" rows="4" maxlength="2000" class="field w-full resize-y" placeholder="是哪一句，或者有什么遗漏？"></textarea>
+      <p id="feedback-error" class="error-message mt-4" role="alert" hidden></p>
+      <div class="mt-6 flex justify-end gap-3"><button type="button" class="secondary-button" data-close="feedback-dialog">取消</button><button id="feedback-submit" type="submit" class="primary-button">记录这次反馈</button></div>
+    </form>
+  </dialog>
+  <dialog id="command-dialog" class="modal" aria-labelledby="command-title">
+    <div class="flex items-center justify-between border-b border-line px-6 py-5"><h2 id="command-title" class="font-semibold">命令</h2><button type="button" class="icon-button small" data-close="command-dialog" aria-label="关闭" title="关闭"><i data-icon="x" aria-hidden="true"></i></button></div>
+    <div id="command-list" class="max-h-[60dvh] overflow-y-auto p-3"></div>
+  </dialog>
+  <dialog id="relationship-miss-dialog" class="modal" aria-labelledby="relationship-miss-title">
+    <form id="relationship-miss-form" class="p-6 sm:p-7">
+      <div class="mb-5 flex items-center justify-between gap-4"><h2 id="relationship-miss-title" class="text-lg font-semibold">记下这次没做到</h2><button type="button" class="icon-button small" data-close="relationship-miss-dialog" aria-label="关闭" title="关闭"><i data-icon="x" aria-hidden="true"></i></button></div>
+      <p id="relationship-miss-promise" class="mb-4 whitespace-pre-wrap leading-7"></p>
+      <label for="relationship-miss-reason" class="mb-2 block text-sm text-muted">原因</label>
+      <textarea id="relationship-miss-reason" rows="3" maxlength="120" class="field w-full resize-y" placeholder="发生了什么？"></textarea>
+      <p id="relationship-miss-error" class="error-message mt-4" role="alert" hidden></p>
+      <div class="mt-6 flex justify-end gap-3"><button type="button" class="secondary-button" data-close="relationship-miss-dialog">取消</button><button id="relationship-miss-submit" type="submit" class="primary-button">留下记录</button></div>
+    </form>
+  </dialog>
+  <dialog id="life-pin-dialog" class="modal" aria-labelledby="life-pin-title">
+    <form id="life-pin-form" class="p-6 sm:p-7">
+      <div class="mb-5 flex items-center justify-between gap-4"><h2 id="life-pin-title" class="text-lg font-semibold">编辑要钉进她的牵挂</h2><button type="button" class="icon-button small" data-close="life-pin-dialog" aria-label="关闭" title="关闭"><i data-icon="x" aria-hidden="true"></i></button></div>
+      <label for="life-pin-input" class="mb-2 block text-sm text-muted">留下一句话（最多 60 个字）</label>
+      <textarea id="life-pin-input" rows="4" maxlength="60" class="field w-full resize-y" placeholder="把报备改成你希望她长期记住的内容"></textarea>
+      <p id="life-pin-error" class="error-message mt-4" role="alert" hidden></p>
+      <div class="mt-6 flex justify-end gap-3"><button type="button" class="secondary-button" data-close="life-pin-dialog">取消</button><button id="life-pin-submit" type="submit" class="primary-button">钉进牵挂</button></div>
+    </form>
+  </dialog>
+  <div id="toast" class="toast" role="status" hidden><i data-icon="circle-check" aria-hidden="true"></i><span id="toast-text"></span><button id="toast-action" type="button" class="ml-2 font-medium underline underline-offset-4" hidden>播放</button></div>
+  <noscript><p class="p-6 text-center">请启用 JavaScript 后使用旧识。</p></noscript>
+</body>
+</html>

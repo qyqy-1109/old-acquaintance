@@ -1,0 +1,24 @@
+# 旧识 · 依赖声明
+#
+# 装：pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+#
+# 版本按「实测跑通的那一套」锁死。这几个包的行为差异会直接影响功能，不能随意升：
+#   - openai：换供应商（智谱/小米/千问）全靠它的 OpenAI 兼容客户端。
+#     3.x 的 extra_body 透传方式和流式 chunk 结构跟 1.x 不同，升大版本要重测。
+#   - numpy：向量存取。np.frombuffer 返回只读视图这件事踩过坑
+#     （见 app/models/memory.py 的 _load），换版本要重跑一遍记忆相关测试。
+#   - fastapi / uvicorn：HTTP 与 SSE。SSE 的流式收尾行为跟版本有关。
+#   - websockets（TTS 引入）：语音合成走 DashScope 的 WS duplex 协议。
+#     **只用它的同步客户端**（`websockets.sync.client`）——T37 要让音频「边收边
+#     yield」，同步生成器直接对接 SSE 的同步 for 循环最省事。16.x 才有 sync API，
+#     降版本会直接 ImportError。
+#
+# 只锁直接 import 的包。传递依赖（starlette、httpx、anyio 等）交给 pip 自己解，
+# 写死反而会在换 Python 版本时炸。
+
+fastapi==0.141.1
+uvicorn==0.53.0
+pydantic==2.13.5
+openai==3.15.0
+numpy==2.5.3
+websockets==16.1.1

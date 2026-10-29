@@ -1,0 +1,57 @@
+# 构建镜像时**排除**的东西。
+# 最要紧的一条是 .env：密钥绝不能烘进镜像层（镜像层是可以被翻出来的，
+# 而且一旦推送到 registry，就等于把 key 发出去了）。运行时用 --env-file 或环境变量传。
+
+# ===== 密钥（绝不进镜像）=====
+.env
+.env.local
+*.pem
+*.key
+
+# ===== 运行时数据（用户隐私；镜像里不该有别人的对话）=====
+memory.db
+memory.db-wal
+memory.db-shm
+# 迁移前留下的记忆快照（含真实对话）：文件名不带 .db 后缀，旧规则挡不住（T64 补）
+memory.db.bak*
+*.bak-*
+accounts.db
+personality.json
+personality.json.pending.json
+user_profile.json
+world.json
+emotion.json
+soul.json
+feedback.jsonl
+*.migrated
+data/
+users/
+logs/
+*.log
+
+# ===== 评测与临时产物 =====
+benchmark/_bdata/
+benchmark/_pdata/
+benchmark/results/
+_tmptest/
+*.tmp
+
+# ===== 前端构建链（运行时不依赖 Node：产物已在 app/views/assets/，见 D30）=====
+# 排掉它主要是为了让构建上下文别把上百 MB 的 node_modules 传进来；
+# 同时**与 .gitignore 对齐**：万一以后有人把 Dockerfile 改成 `COPY . .`，
+# 这里就是唯一挡住隐私数据的那道墙。
+node_modules/
+package.json
+package-lock.json
+scripts/
+tests/
+docs/
+
+# ===== 开发环境/版本控制 =====
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/

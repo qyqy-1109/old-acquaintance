@@ -1,0 +1,16 @@
+{
+  "name": "jiushi-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:frontend": "node scripts/build-frontend.mjs",
+    "test:frontend": "node --test tests/frontend.test.mjs tests/bubble.test.mjs tests/life-board.test.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "eventsource-parser": "^3.0.0",
+    "lucide-static": "^0.468.0",
+    "playwright": "^1.63.0",
+    "tailwindcss": "^4.1.0"
+  }
+}

@@ -1,0 +1,72 @@
+# ===== 密钥与本地配置（**绝不能进版本库**）=====
+# 这个项目最初没有 .gitignore，密钥是硬编码在 app/config.py 里的（见 #064 的说明）。
+# 现在密钥移到了 .env，所以这条是**第一道防线**：一旦 .env 进了 git 历史，
+# 就算之后删掉，历史里也还在——只能换 key。
+.env
+.env.local
+*.pem
+*.key
+
+# ===== 运行时数据（用户隐私 + 体积）=====
+# 这些是「用户跟她说的话」——面试演示可以给人看，但绝不该进库。
+memory.db
+memory.db-wal
+memory.db-shm
+# 迁移/调参前留下的**记忆快照**（如 memory.db.bak-dim2048）：里面是真实对话，
+# 文件名不带 .db 后缀所以旧规则挡不住它们（#83 复核时发现，T64 补上）。
+memory.db.bak*
+*.bak-*
+accounts.db
+accounts.db-wal
+accounts.db-shm
+life.json
+relationship.json
+personality.json
+personality.json.pending.json
+user_profile.json
+world.json
+emotion.json
+soul.json
+feedback.jsonl
+*.migrated
+data/
+users/
+logs/
+*.log
+
+# ===== 评测与临时产物 =====
+benchmark/_bdata/
+benchmark/_pdata/
+benchmark/results/
+_tmptest/
+*.tmp
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Frontend build dependencies; compiled browser assets are kept in the project.
+node_modules/
+.idea/
+.workbuddy/
+
+# ===== 第三方 agent skills / 本地工具（不进公开仓库）=====
+.agent/
+
+# ===== 内部台账与个人文档（保留在本机，不公开）=====
+docs/交接.md
+docs/修改记录.md
+docs/修改记录-归档.md
+docs/代码整体解读.md
+docs/约束清单.md
+docs/竞争力与简历.md
+docs/前端交付说明.md
+docs/superpowers/
+
+# ===== 本地复现与损坏快照 =====
+life_repro_*/
+*.corrupt
+*.corrupt*
