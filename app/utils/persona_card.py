@@ -80,7 +80,7 @@ def parse(content: str, filename: str = "") -> dict:
     if isinstance(raw.get("current"), dict):
         persona = _native(raw["current"], warnings)
         world = _world(raw.get("world") or raw.get("entries"))
-        fmt = "jiushi"
+        fmt = "old-acquaintance"
         avatar = _avatar(raw["current"]) or _avatar(raw)
     elif _is_v2(raw):
         data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
@@ -93,7 +93,7 @@ def parse(content: str, filename: str = "") -> dict:
     elif any(key in raw for key in ("name", "identity", "traits", "tone")):
         persona = _native(raw, warnings)
         world = _world(raw.get("world") or raw.get("entries"))
-        fmt = "jiushi-flat"
+        fmt = "old-acquaintance-flat"
         avatar = _avatar(raw)
     else:
         raise CardError("认不出卡片格式：既不是旧识人格 JSON，也不是角色卡 v2")

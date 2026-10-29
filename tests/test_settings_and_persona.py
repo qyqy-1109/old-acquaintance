@@ -73,7 +73,7 @@ class PersonaCardTests(unittest.TestCase):
             "traits": ["直接"],
             "world": ["原生世界"],
         }, ensure_ascii=False))
-        self.assertEqual(parsed["format"], "jiushi-flat")
+        self.assertEqual(parsed["format"], "old-acquaintance-flat")
         self.assertEqual(parsed["personality"]["name"], "原生角色")
         self.assertEqual(parsed["world"], ["原生世界"])
 

@@ -182,7 +182,7 @@ def export_card(request: Request, fmt: str = Query("native", alias="format")) ->
         filename = "persona-card-v2.json"
     else:
         payload = {
-            "format": "jiushi-persona-v1",
+            "format": "old-acquaintance-persona-v1",
             "current": service.personality.export_current(),
             "world": [entry["text"] for entry in service.world.entries],
         }

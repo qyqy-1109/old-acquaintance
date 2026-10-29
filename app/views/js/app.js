@@ -980,7 +980,7 @@ async function downloadAllData() {
     const blob = await response.blob();
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "jiushi-export.zip";
+    link.download = "old-acquaintance-export.zip";
     link.click();
     URL.revokeObjectURL(link.href);
     toast("已导出全部数据");

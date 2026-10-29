@@ -6,8 +6,8 @@
 #   3. 数据目录必须挂出来：记忆库 / 人设 / 画像 / 日志都在里面，容器重建不能丢。
 #
 # 跑法：
-#   docker build -t jiushi .
-#   docker run -p 8765:8765 --env-file .env -v wb-data:/data jiushi
+#   docker build -t old-acquaintance .
+#   docker run -p 8765:8765 --env-file .env -v wb-data:/data old-acquaintance
 # 首次使用（没有 .env 时）：复制模板 `cp .env.example .env` 再填。
 #
 # ⚠ 对外提供服务时必须加 `-e WB_AUTH_REQUIRED=1`，否则"每用户一套数据"的隔离等于开着门。

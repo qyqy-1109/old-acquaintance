@@ -66,6 +66,6 @@ def export_all(request: Request) -> Response:
     data = buffer.getvalue()
     return Response(
         data, media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="jiushi-export.zip"',
+        headers={"Content-Disposition": 'attachment; filename="old-acquaintance-export.zip"',
                  "Cache-Control": "no-store"},
     )

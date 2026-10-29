@@ -1,4 +1,4 @@
-# 旧识（jiushi） · 带记忆治理的本机对话助手
+# 旧识（old-acquaintance） · 带记忆治理的本机对话助手
 
 一个跑在本机的陪伴型对话助手。**重点不是聊天界面，而是记忆系统**：跨会话记住发生过的事，把「她是谁 / 你是谁 / 你们共同的世界 / 你们聊过什么」分开存，并且允许旧记录被新事实推翻。
 
@@ -115,9 +115,9 @@ python openai_hello.py
 ### Docker
 
 ```bash
-docker build -t jiushi .
+docker build -t old-acquaintance .
 docker run -p 8765:8765 --env-file .env -v wb-data:/data \
-  -e WB_AUTH_REQUIRED=1 jiushi
+  -e WB_AUTH_REQUIRED=1 old-acquaintance
 ```
 
 数据卷必须挂出来：记忆库、人设、画像、世界书、设置与日志都在 `/data`。
