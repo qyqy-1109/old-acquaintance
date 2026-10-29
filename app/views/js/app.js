@@ -18,6 +18,13 @@ let settings = null;
 let settingsInitial = {};
 let pendingPersonaContent = "";
 let personaFilename = "";
+let wizardActive = false;
+let wizardStep = 1;
+let wizardNeedsPersona = localStorage.getItem("wizard_persona_pending") === "1";
+let wizardKeyReady = false;
+let wizardEmbedReady = false;
+let wizardPersonaImported = false;
+let demoMode = false;
 let setupMode = false;
 let loginBusy = false;
 let busy = false;
@@ -131,16 +138,52 @@ async function action(button, task, errorId = "memory-error") {
   } finally { setButtonBusy(button, false); }
 }
 
-function configureEntry() {
+function applyAccountMode() {
   setupMode = Boolean(health?.account_setup_required);
-  const keysReady = Boolean(health?.keys_ready);
-  $("entry-setup").hidden = keysReady;
-  if (health?.password_login) $("entry-status").querySelector("span:last-child").textContent =
-    !keysReady ? "先配置模型" : setupMode ? "首次创建账号" : "身份验证已开启";
   $("password-confirm-wrap").hidden = !setupMode;
   $("inherit-default-wrap").hidden = !setupMode || !health?.legacy_data_available;
   $("password-input").autocomplete = setupMode ? "new-password" : "current-password";
   if (!loginBusy) setLoginBusy(false);
+}
+
+function setWizardStep(step) {
+  wizardStep = step;
+  $("wizard-steps").hidden = !wizardActive;
+  for (let i = 1; i <= 3; i++) {
+    $("wizard-step-" + i).className = i === step ? "font-medium text-ink"
+      : i < step ? "text-brand" : "text-faint";
+  }
+  $("wizard-model").hidden = !wizardActive || step !== 1;
+  $("login-form").hidden = wizardActive && step !== 2;
+  $("wizard-persona").hidden = !wizardActive || step !== 3;
+  if (step === 3 && !wizardPersonaImported) {
+    $("wizard-persona-import").hidden = false;
+    $("wizard-persona-start").hidden = true;
+    $("wizard-persona-note").textContent = "";
+  }
+  applyAccountMode();
+  if (step === 1) loadWizardSettings();
+}
+
+function configureEntry() {
+  const keysReady = Boolean(health?.keys_ready);
+  const needsPersona = wizardNeedsPersona && client.identity.mode === "token";
+  wizardActive = Boolean(health?.first_run) || needsPersona;
+  $("demo-open").hidden = keysReady || Boolean(health?.auth_required);
+  if (health?.password_login) $("entry-status").querySelector("span:last-child").textContent =
+    !keysReady ? "先配置模型" : needsPersona ? "最后一步" : health.account_setup_required ? "首次创建账号" : "身份验证已开启";
+  if (!wizardActive) {
+    $("wizard-steps").hidden = true;
+    $("wizard-model").hidden = true;
+    $("wizard-persona").hidden = true;
+    $("login-form").hidden = false;
+    applyAccountMode();
+    return;
+  }
+  if (!keysReady) setWizardStep(1);
+  else if (health?.account_setup_required) setWizardStep(2);
+  else if (needsPersona) setWizardStep(3);
+  else setWizardStep(2);
 }
 
 function setLoginBusy(active) {
@@ -202,6 +245,135 @@ function renderSettings(data) {
     + (managed.size ? `\n以下项由部署环境变量管理，页面只读：${[...managed].join("、")}` : "");
 }
 
+async function loadWizardSettings() {
+  try {
+    const data = await client.settings();
+    wizardKeyReady = Boolean(data.bg_ready);
+    wizardEmbedReady = Boolean(data.embed_ready);
+    const base = data.values?.WB_BASE_URL || {};
+    const embedBase = data.values?.WB_EMBED_BASE_URL || {};
+    $("wizard-base").value = base.value || "";
+    $("wizard-base").placeholder = data.defaults?.WB_BASE_URL || "https://api.example.com/v1";
+    $("wizard-embed-base").value = embedBase.value || "";
+    $("wizard-embed-base").placeholder = data.defaults?.WB_EMBED_BASE_URL || "https://api.example.com/v1";
+    const apiKey = data.values?.WB_API_KEY || {};
+    $("wizard-api-key").value = "";
+    $("wizard-api-key").placeholder = apiKey.set ? `已设置：${apiKey.masked}` : "sk-...";
+    const embedKey = data.values?.WB_EMBED_API_KEY || {};
+    $("wizard-embed-key").value = "";
+    $("wizard-embed-key").placeholder = embedKey.set ? `已设置：${embedKey.masked}` : "sk-...";
+  } catch (error) {
+    setError("wizard-model-error", error.message);
+  }
+}
+
+function wizardValues() {
+  const values = {};
+  const base = $("wizard-base").value.trim();
+  const key = $("wizard-api-key").value.trim();
+  const embedBase = $("wizard-embed-base").value.trim();
+  const embedKey = $("wizard-embed-key").value.trim();
+  if (base) values.WB_BASE_URL = base;
+  if (key) values.WB_API_KEY = key;
+  if (embedBase) values.WB_EMBED_BASE_URL = embedBase;
+  if (embedKey) values.WB_EMBED_API_KEY = embedKey;
+  return values;
+}
+
+async function saveWizardModel(event) {
+  event.preventDefault();
+  const values = wizardValues();
+  if (!$("wizard-api-key").value.trim() && !wizardKeyReady) {
+    setError("wizard-model-error", "请填写主 API Key。");
+    return;
+  }
+  if (!$("wizard-embed-key").value.trim() && !wizardEmbedReady) {
+    setError("wizard-model-error", "请填写 Embedding Key。");
+    return;
+  }
+  setError("wizard-model-error");
+  $("wizard-model-note").hidden = true;
+  setButtonBusy($("wizard-save"), true);
+  try {
+    const result = await client.saveSettings(values);
+    health = await client.json("/api/healthz", { anonymous: true, suppressAuth: true });
+    if (result.applied && health.keys_ready) {
+      wizardActive = true;
+      configureEntry();
+      toast("模型配置已生效");
+    } else {
+      $("wizard-model-note").hidden = false;
+      $("wizard-model-note").textContent = result.message || "配置已保存，但需要重启服务后生效。";
+    }
+  } catch (error) {
+    setError("wizard-model-error", error.message);
+  } finally {
+    setButtonBusy($("wizard-save"), false);
+  }
+}
+
+async function testWizardModel() {
+  setError("wizard-model-error");
+  $("wizard-model-note").hidden = true;
+  setButtonBusy($("wizard-test"), true);
+  try {
+    const result = await client.testSettings(wizardValues());
+    $("wizard-model-note").hidden = false;
+    $("wizard-model-note").textContent =
+      `主对话：${result.chat.ok ? "可用" : "失败"} — ${result.chat.message}\n`
+      + `Embedding：${result.embedding.ok ? "可用" : "失败"} — ${result.embedding.message}`;
+  } catch (error) {
+    setError("wizard-model-error", error.message);
+  } finally {
+    setButtonBusy($("wizard-test"), false);
+  }
+}
+
+async function finishWizard() {
+  localStorage.removeItem("wizard_persona_pending");
+  wizardNeedsPersona = false;
+  wizardActive = false;
+  wizardPersonaImported = false;
+  $("wizard-steps").hidden = true;
+  $("wizard-model").hidden = true;
+  $("wizard-persona").hidden = true;
+  $("login-form").hidden = false;
+  $("wizard-persona-import").hidden = false;
+  $("wizard-persona-start").hidden = true;
+  $("wizard-persona-note").textContent = "";
+  try {
+    await enterApp(await client.json("/api/state"));
+  } catch (error) {
+    showEntry(error.message);
+  }
+}
+
+async function openDemo() {
+  try {
+    const data = await client.json("/api/state", { anonymous: true });
+    demoMode = true;
+    await enterApp(data, { demo: true });
+  } catch (error) {
+    demoMode = false;
+    setError("entry-error", error.message);
+  }
+}
+
+function exitDemo() {
+  demoMode = false;
+  $("demo-banner").hidden = true;
+  for (const button of document.querySelectorAll("[data-view]")) button.disabled = false;
+  showEntry();
+}
+
+function renderDemoConversation() {
+  log.replaceChildren();
+  message("assistant", "这是演示模式。配置好模型后，我会真正记住你说过的事、共同的世界和我们的约定。");
+  message("user", "这里能看到什么？");
+  message("assistant", "左侧可以看世界书、状态、时间轴、她的生活、关系和画像；导入人格卡片后，角色也会跟着变。");
+  systemMessage("演示模式只读。点上方「配置模型」后开始真实对话。");
+}
+
 function collectSettings() {
   const values = {};
   for (const [id, [key, secret]] of Object.entries(settingsFields)) {
@@ -248,6 +420,18 @@ async function saveSettings(event) {
     $("settings-note").textContent = result.message || "配置已保存。";
     if (result.applied && health.keys_ready) {
       toast("模型配置已生效");
+      if (demoMode) {
+        $("settings-dialog").close();
+        demoMode = false;
+        $("demo-banner").hidden = true;
+        showEntry();
+        return;
+      }
+      if (wizardActive) {
+        $("settings-dialog").close();
+        configureEntry();
+        return;
+      }
       if (client.identity.mode === "token") {
         $("settings-dialog").close();
         await enterApp(await client.json("/api/state"));
@@ -312,7 +496,15 @@ async function confirmPersonaImport(event) {
     const result = await client.personaImport(personaFilename, pendingPersonaContent);
     $("persona-preview-dialog").close();
     await refreshState();
-    toast([result.summary, result.world].filter(Boolean).join(" · "));
+    const summary = [result.summary, result.world].filter(Boolean).join(" · ");
+    if (wizardActive && wizardStep === 3) {
+      wizardPersonaImported = true;
+      $("wizard-persona-note").textContent = summary + "\n可以点「开始聊天」进入。";
+      $("wizard-persona-import").hidden = true;
+      $("wizard-persona-start").hidden = false;
+      return;
+    }
+    toast(summary);
   } catch (error) {
     setError("persona-preview-error", error.message);
   } finally {
@@ -340,7 +532,14 @@ function showEntry(message = "") {
   $("app-shell").hidden = true;
   configureEntry();
   setLoginBusy(false);
-  setError("entry-error", message);
+  if (wizardActive && wizardStep === 3) {
+    $("wizard-persona-note").textContent = message;
+  } else if (wizardActive && wizardStep === 1) {
+    $("wizard-model-note").hidden = !message;
+    $("wizard-model-note").textContent = message;
+  } else {
+    setError("entry-error", message);
+  }
 }
 
 function resetSession() {
@@ -380,6 +579,9 @@ function resetSession() {
   $("stop").hidden = true;
   $("send").hidden = false;
   $("toast").hidden = true;
+  demoMode = false;
+  $("demo-banner").hidden = true;
+  for (const button of document.querySelectorAll("[data-view]")) button.disabled = false;
   pendingPersonaContent = "";
   personaFilename = "";
   setButtonBusy($("legacy-claim-confirm"), false);
@@ -414,9 +616,14 @@ async function boot() {
         try {
           const user = await client.me();
           $("username-input").value = user.username;
+          configureEntry();
           if (!setupMode) {
             if (!health.keys_ready) {
               showEntry("请先配置模型 API Key，再开始聊天。");
+              return;
+            }
+            if (wizardNeedsPersona) {
+              showEntry("最后一步：导入人格卡片，或者直接开始。");
               return;
             }
             await enterApp(await client.json("/api/state"));
@@ -443,11 +650,13 @@ async function login() {
   if (loginBusy || !health) return;
   if (!health.keys_ready) {
     setError("entry-error", "请先配置模型 API Key，再创建账号或登录。");
-    openSettings();
+    if (wizardActive) setWizardStep(1);
+    else openSettings();
     return;
   }
   const username = $("username-input").value.trim();
   const password = $("password-input").value;
+  const wasSetup = setupMode;
   if (!username || !password) { setError("entry-error", "请填写账号和密码。"); return; }
   if (setupMode && (password.length < 8 || password.length > 128)) { setError("entry-error", "密码需为 8 至 128 个字符。"); return; }
   if (setupMode && password !== $("password-confirm").value) { setError("entry-error", "两次密码不一致。"); return; }
@@ -459,6 +668,14 @@ async function login() {
     $("password-confirm").value = "";
     health.account_setup_required = false;
     health.auth_required = true;
+    if (wasSetup || wizardNeedsPersona) {
+      wizardActive = true;
+      wizardNeedsPersona = true;
+      localStorage.setItem("wizard_persona_pending", "1");
+      configureEntry();
+      return;
+    }
+    wizardActive = false;
     configureEntry();
     await enterApp(await client.json("/api/state"));
   } catch (error) {
@@ -473,18 +690,32 @@ async function login() {
   } finally { setLoginBusy(false); }
 }
 
-async function enterApp(data) {
+async function enterApp(data, { demo = false } = {}) {
+  demoMode = demo;
   const epoch = client.epoch;
   $("entry-screen").hidden = true;
   $("app-shell").hidden = false;
+  $("demo-banner").hidden = !demo;
+  for (const button of document.querySelectorAll("[data-view]")) {
+    button.disabled = demo && !["chat", "profile"].includes(button.dataset.view);
+  }
+  $("persona-import").disabled = demo;
+  $("persona-export").disabled = demo;
+  $("command-open").disabled = demo;
+  $("feedback-open").disabled = demo;
   log.replaceChildren();
   followLatest = true;
   renderState(data);
-  $("current-user").textContent = client.username || "已登录";
+  $("current-user").textContent = demo ? "演示模式" : client.username || "已登录";
   $("current-user").title = $("current-user").textContent;
-  $("user-avatar").textContent = Array.from(client.username)[0] || "你";
-  $("identity-kind").textContent = "账号登录";
+  $("user-avatar").textContent = demo ? "演" : Array.from(client.username)[0] || "你";
+  $("identity-kind").textContent = demo ? "只读预览" : "账号登录";
   navigate("chat");
+  if (demo) {
+    renderDemoConversation();
+    updateComposer();
+    return;
+  }
   greetingBusy = true;
   updateComposer();
   const greeting = message("assistant", "正在打个招呼…");
@@ -919,8 +1150,8 @@ function renderRecall(holder, entries) {
 }
 
 function updateComposer() {
-  input.disabled = greetingBusy || $("app-shell").hidden || !health?.keys_ready;
-  $("send").disabled = busy || greetingBusy || !input.value.trim() || !health?.keys_ready;
+  input.disabled = greetingBusy || $("app-shell").hidden || demoMode || !health?.keys_ready;
+  $("send").disabled = busy || greetingBusy || !input.value.trim() || demoMode || !health?.keys_ready;
   $("send").hidden = busy;
   $("stop").hidden = !busy;
   $("composer").setAttribute("aria-busy", String(busy));
@@ -928,6 +1159,7 @@ function updateComposer() {
 
 async function sendMessage() {
   const text = input.value.trim();
+  if (demoMode) return;
   if (!text || busy || greetingBusy || $("app-shell").hidden) return;
   if (!health?.keys_ready) {
     toast("请先在设置里配置模型 API Key");
@@ -1094,7 +1326,15 @@ for (const [label, command] of commands) {
 
 $("login-form").addEventListener("submit", event => { event.preventDefault(); login(); });
 $("settings-open").addEventListener("click", openSettings);
-$("entry-settings-open").addEventListener("click", openSettings);
+$("wizard-model").addEventListener("submit", saveWizardModel);
+$("wizard-test").addEventListener("click", testWizardModel);
+$("wizard-more").addEventListener("click", openSettings);
+$("wizard-persona-import").addEventListener("click", () => $("persona-file").click());
+$("wizard-persona-skip").addEventListener("click", finishWizard);
+$("wizard-persona-start").addEventListener("click", finishWizard);
+$("demo-open").addEventListener("click", openDemo);
+$("demo-exit").addEventListener("click", exitDemo);
+$("demo-settings").addEventListener("click", openSettings);
 $("settings-form").addEventListener("submit", saveSettings);
 $("settings-test").addEventListener("click", testSettings);
 $("persona-import").addEventListener("click", () => $("persona-file").click());

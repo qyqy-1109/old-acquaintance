@@ -122,10 +122,40 @@ def test_legacy_claim_dialog_contract_is_present():
         client.close()
 
 
+def test_first_run_wizard_and_demo_contract_is_present():
+    """首次启动必须有三步入口，并提供只读演示模式。"""
+    client = TestClient(app)
+    try:
+        page = client.get("/")
+        assert page.status_code == 200
+        html = page.text
+        for marker in (
+            'id="wizard-steps"',
+            'id="wizard-model"',
+            'id="wizard-base"',
+            'id="wizard-api-key"',
+            'id="wizard-embed-base"',
+            'id="wizard-embed-key"',
+            'id="wizard-save"',
+            'id="wizard-persona"',
+            'id="wizard-persona-import"',
+            'id="wizard-persona-skip"',
+            'id="wizard-persona-start"',
+            'id="demo-open"',
+            'id="demo-banner"',
+            'id="demo-exit"',
+        ):
+            assert marker in html, f"首次启动/演示模式缺少 {marker}"
+        assert html.find('id="wizard-step-1"') < html.find('id="wizard-step-2"') < html.find('id="wizard-step-3"')
+    finally:
+        client.close()
+
+
 if __name__ == "__main__":
     test_frontend_resources_are_served()
     test_life_board_puts_her_reports_first()
     test_life_pin_dialog_contract_is_present()
     test_relationship_board_contract_is_present()
     test_legacy_claim_dialog_contract_is_present()
+    test_first_run_wizard_and_demo_contract_is_present()
     print("frontend resources: all checks passed")
