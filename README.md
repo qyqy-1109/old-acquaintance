@@ -92,9 +92,10 @@ python openai_hello.py
 在「画像与人设」页可以导入：
 
 - 旧识原生 JSON（`{"current": {...}}` 或扁平人设对象）；
-- SillyTavern / character card v2 JSON（`{"spec": "chara_card_v2", "data": {...}}`）。
+- SillyTavern / character card v2 JSON（`{"spec": "chara_card_v2", "data": {...}}`）；
+- 带 `chara`/`ccv3` 元数据的 PNG 角色卡。
 
-导入前会显示名字、特质数、开场白数和世界书条数；确认后旧人格进入历史，可回滚。角色卡里的 `character_book` 会一并写入世界书；`mes_example` 不会直接注入对话。当前不支持 PNG 角色卡。
+支持拖拽或文件选择；导入前会展示当前人设、目标人设的完整内容、开场白、行为规则和世界书条目，并可选择是否同时导入世界书。确认后旧人格进入历史，可回滚；角色卡内的头像会保存为当前头像。`mes_example` 和扩展字段不会原样注入。导出支持旧识原生 JSON 和 SillyTavern v2 两种格式。
 
 ### Docker
 
@@ -170,7 +171,7 @@ docs/               架构、技术栈、设计决策与调研
 
 - 这是一个**单机 SQLite** 项目，没有做多进程并发写与水平扩展。
 - 默认测试用假模型验证机制；真实模型下的记忆质量、自然度和 TTS 效果需要用自己的密钥复测。
-- 人格卡片暂不支持 PNG 内嵌元数据；SillyTavern 的 `mes_example` 和扩展字段不会原样注入。
+- 人格卡片支持 JSON 和 PNG 内嵌元数据；SillyTavern 的 `mes_example` 和扩展字段不会原样注入。
 - 天气、附近地点、情绪判定依赖第三方服务；未配置时自动关闭，不会编造结果。
 - 语音默认开启并复用 embedding Key 走千问 TTS；如果 embedding 不是千问，请设置 `WB_TTS_ENABLED=0` 或单独配置 `WB_TTS_API_KEY`。
 - 评测分数受模型随机性和用例污染影响；判断改动是否退化应看 `--repeat`，不要只看单次。

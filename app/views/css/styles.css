@@ -105,6 +105,8 @@
   .toast { position: fixed; bottom: 24px; left: 50%; z-index: 80; display: flex; align-items: center; gap: 10px; max-width: calc(100% - 32px); padding: 12px 16px; border: 1px solid var(--color-line); border-radius: 8px; transform: translateX(-50%); background: white; color: var(--color-ink); box-shadow: 0 6px 30px #203b2412; font-size: 13px; }
   .toast > [data-icon] { color: var(--color-brand); }
   .tooltip { position: fixed; z-index: 100; max-width: 200px; padding: 5px 9px; border: 1px solid var(--color-line); border-radius: 5px; background: white; color: var(--color-ink); box-shadow: 0 3px 12px #25392512; font-size: 11px; pointer-events: none; }
+  .persona-drop { transition: border-color .15s ease, background .15s ease, color .15s ease; }
+  .persona-drop.is-dragging { border-color: var(--color-brand); background: var(--color-brand-soft); color: var(--color-brand); }
   .skip-link { position: fixed; top: -80px; left: 16px; z-index: 120; padding: 10px 15px; background: white; color: var(--color-brand); }
   .skip-link:focus { top: 16px; }
 }

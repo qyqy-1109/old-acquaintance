@@ -157,12 +157,20 @@ export class ApiClient {
     return this.json("/api/settings/test", { method: "POST", body: { values } });
   }
 
-  async personaPreview(filename, content) {
-    return this.json("/api/persona/preview", { method: "POST", body: { filename, content } });
+  async personaPreview(filename, content = "", contentBase64 = null) {
+    return this.json("/api/persona/preview", {
+      method: "POST",
+      body: { filename, content, content_base64: contentBase64 },
+    });
   }
 
-  async personaImport(filename, content) {
-    return this.json("/api/persona/import", { method: "POST", body: { filename, content } });
+  async personaImport(filename, content = "", contentBase64 = null, includeWorld = true) {
+    return this.json("/api/persona/import", {
+      method: "POST",
+      body: {
+        filename, content, content_base64: contentBase64, include_world: includeWorld,
+      },
+    });
   }
 
   async claimLegacy() {

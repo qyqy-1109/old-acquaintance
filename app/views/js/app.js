@@ -17,7 +17,9 @@ let state = null;
 let settings = null;
 let settingsInitial = {};
 let pendingPersonaContent = "";
+let pendingPersonaBase64 = "";
 let personaFilename = "";
+let avatarUrl = "";
 let wizardActive = false;
 let wizardStep = 1;
 let wizardNeedsPersona = localStorage.getItem("wizard_persona_pending") === "1";
@@ -464,25 +466,56 @@ async function testSettings() {
   }
 }
 
-function showPersonaPreview(preview, content, filename) {
+function fillPreviewList(id, items) {
+  $(id).replaceChildren(...(items?.length ? items : ["（无）"]).map(text =>
+    element("li", "whitespace-pre-wrap", "· " + text)));
+}
+
+function showPersonaPreview(preview, content, base64, filename) {
   pendingPersonaContent = content;
+  pendingPersonaBase64 = base64;
   personaFilename = filename;
   $("persona-preview-name").textContent = preview.name || "未命名角色";
+  $("persona-preview-current").textContent =
+    `导入会替换当前「${preview.current_name}」v${preview.current_version}；旧版本会留在历史里，可回滚。`;
   $("persona-preview-detail").textContent =
-    `${preview.format} · ${preview.traits} 条特质 · ${preview.greeting} 条开场白 · ${preview.world_count} 条世界书\n`
-    + (preview.identity || "");
+    `${preview.format} · ${preview.traits.length} 条特质 · ${preview.greetings.length} 条开场白`
+    + ` · ${preview.world_count} 条世界书` + (preview.avatar ? " · 含头像" : "");
+  $("persona-preview-identity").textContent = preview.identity || "（无）";
+  fillPreviewList("persona-preview-traits", preview.traits);
+  fillPreviewList("persona-preview-greetings", preview.greetings);
+  fillPreviewList("persona-preview-behavior", preview.behavior);
+  fillPreviewList("persona-preview-world", preview.world);
+  $("persona-preview-world-title").textContent = `世界书（${preview.world_count} 条）`;
+  $("persona-preview-world-toggle").checked = preview.world_count > 0;
+  $("persona-preview-world-toggle").disabled = preview.world_count === 0;
   $("persona-preview-warnings").replaceChildren(...(preview.warnings || []).map(text =>
     element("li", "whitespace-pre-wrap", "· " + text)));
   setError("persona-preview-error");
   $("persona-preview-dialog").showModal();
 }
 
+function toBase64(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
 async function handlePersonaFile(file) {
+  if (demoMode) { toast("演示模式只读，配置模型后再导入"); return; }
   if (!file) return;
-  if (file.size > 1_600_000) { toast("人格卡片太大（上限 1.5 MB）"); return; }
+  if (file.size > 4_000_000) { toast("人格卡片太大（上限 4 MB）"); return; }
   try {
-    const content = await file.text();
-    showPersonaPreview(await client.personaPreview(file.name, content), content, file.name);
+    const isPng = file.type === "image/png" || /\.png$/i.test(file.name);
+    let content = "", base64 = null;
+    if (isPng) {
+      base64 = toBase64(new Uint8Array(await file.arrayBuffer()));
+    } else {
+      content = await file.text();
+    }
+    showPersonaPreview(await client.personaPreview(file.name, content, base64), content, base64, file.name);
   } catch (error) {
     toast(error.message);
   }
@@ -493,10 +526,13 @@ async function confirmPersonaImport(event) {
   setError("persona-preview-error");
   setButtonBusy($("persona-confirm"), true);
   try {
-    const result = await client.personaImport(personaFilename, pendingPersonaContent);
+    const includeWorld = $("persona-preview-world-toggle").checked;
+    const result = await client.personaImport(
+      personaFilename, pendingPersonaContent, pendingPersonaBase64, includeWorld);
     $("persona-preview-dialog").close();
+    await loadAvatar();
     await refreshState();
-    const summary = [result.summary, result.world].filter(Boolean).join(" · ");
+    const summary = [result.summary, result.world, result.avatar].filter(Boolean).join(" · ");
     if (wizardActive && wizardStep === 3) {
       wizardPersonaImported = true;
       $("wizard-persona-note").textContent = summary + "\n可以点「开始聊天」进入。";
@@ -512,16 +548,44 @@ async function confirmPersonaImport(event) {
   }
 }
 
-async function exportPersona() {
+function resetAvatar() {
+  if (avatarUrl) URL.revokeObjectURL(avatarUrl);
+  avatarUrl = "";
+  for (const id of ["header-avatar", "entry-avatar", "profile-avatar"]) {
+    const img = $(id);
+    if (img) img.src = "/static/assets/avatar-placeholder.png";
+  }
+}
+
+async function loadAvatar() {
   try {
-    const response = await client.request("/api/persona/export");
+    const response = await client.request("/api/persona/avatar");
+    const blob = await response.blob();
+    if (avatarUrl) URL.revokeObjectURL(avatarUrl);
+    avatarUrl = URL.createObjectURL(blob);
+    for (const id of ["header-avatar", "entry-avatar", "profile-avatar"]) {
+      const img = $(id);
+      if (img) img.src = avatarUrl;
+    }
+  } catch (error) {
+    if (error.status !== 404) console.warn("头像读取失败：", error.message);
+    resetAvatar();
+  }
+}
+
+async function downloadPersona(format) {
+  try {
+    const response = await client.request(
+      "/api/persona/export?format=" + encodeURIComponent(format));
     const blob = await response.blob();
     const name = String(state?.name || "personality").replace(/[\\/:*?"<>|]/g, "_");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `${name}-personality.json`;
+    link.download = `${name}-${format === "v2" ? "card-v2" : "personality"}.json`;
     link.click();
     URL.revokeObjectURL(link.href);
+    $("persona-export-dialog").close();
+    toast("已导出");
   } catch (error) {
     toast(error.message);
   }
@@ -583,7 +647,9 @@ function resetSession() {
   $("demo-banner").hidden = true;
   for (const button of document.querySelectorAll("[data-view]")) button.disabled = false;
   pendingPersonaContent = "";
+  pendingPersonaBase64 = "";
   personaFilename = "";
+  resetAvatar();
   setButtonBusy($("legacy-claim-confirm"), false);
   setError("legacy-claim-error");
   updateComposer();
@@ -712,10 +778,12 @@ async function enterApp(data, { demo = false } = {}) {
   $("identity-kind").textContent = demo ? "只读预览" : "账号登录";
   navigate("chat");
   if (demo) {
+    resetAvatar();
     renderDemoConversation();
     updateComposer();
     return;
   }
+  loadAvatar();
   greetingBusy = true;
   updateComposer();
   const greeting = message("assistant", "正在打个招呼…");
@@ -1344,7 +1412,21 @@ $("persona-file").addEventListener("change", event => {
   handlePersonaFile(file);
 });
 $("persona-preview-form").addEventListener("submit", confirmPersonaImport);
-$("persona-export").addEventListener("click", exportPersona);
+$("persona-export").addEventListener("click", () => $("persona-export-dialog").showModal());
+$("persona-export-native").addEventListener("click", () => downloadPersona("native"));
+$("persona-export-v2").addEventListener("click", () => downloadPersona("v2"));
+for (const zone of document.querySelectorAll("[data-persona-drop]")) {
+  zone.addEventListener("dragover", event => {
+    event.preventDefault();
+    zone.classList.add("is-dragging");
+  });
+  zone.addEventListener("dragleave", () => zone.classList.remove("is-dragging"));
+  zone.addEventListener("drop", event => {
+    event.preventDefault();
+    zone.classList.remove("is-dragging");
+    handlePersonaFile(event.dataTransfer?.files?.[0]);
+  });
+}
 $("legacy-claim-form").addEventListener("submit", event => { event.preventDefault(); claimLegacy(); });
 $("legacy-claim-dismiss").addEventListener("click", () => $("legacy-claim-dialog").close());
 $("entry-retry").addEventListener("click", () => { client.cancelPending(); boot(); });

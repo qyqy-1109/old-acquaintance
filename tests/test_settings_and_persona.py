@@ -1,7 +1,10 @@
 import json
 import os
+import base64
+import struct
 import tempfile
 import unittest
+import zlib
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
@@ -36,6 +39,19 @@ CARD_V2 = {
 }
 
 
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    return (struct.pack(">I", len(data)) + kind + data
+            + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+
+
+def _png_card(card: dict) -> bytes:
+    payload = base64.b64encode(json.dumps(card, ensure_ascii=False).encode("utf-8"))
+    return (b"\x89PNG\r\n\x1a\n"
+            + _png_chunk(b"IHDR", b"\x00" * 13)
+            + _png_chunk(b"tEXt", b"chara\0" + payload)
+            + _png_chunk(b"IEND", b""))
+
+
 class PersonaCardTests(unittest.TestCase):
     def test_parse_v2_maps_persona_and_world(self):
         parsed = persona_card.parse(json.dumps(CARD_V2, ensure_ascii=False))
@@ -59,6 +75,12 @@ class PersonaCardTests(unittest.TestCase):
     def test_rejects_unknown_card(self):
         with self.assertRaises(persona_card.CardError):
             persona_card.parse('{"hello": "world"}')
+
+    def test_parse_png_card_uses_chara_metadata(self):
+        png = _png_card(CARD_V2)
+        parsed = persona_card.parse_bytes(png, "card.png")
+        self.assertEqual(parsed["personality"]["name"], "测试角色")
+        self.assertEqual(parsed["avatar"], png)
 
 
 class PersonalityImportTests(unittest.TestCase):
@@ -200,6 +222,19 @@ class ApiSmokeTests(unittest.TestCase):
                                             json={"filename": "card.json", "content": card})
                     self.assertEqual(imported.status_code, 200)
                     self.assertEqual(client.get("/api/state").json()["name"], "测试角色")
+                    exported = client.get("/api/persona/export?format=v2")
+                    self.assertEqual(exported.status_code, 200)
+                    self.assertEqual(exported.json()["spec"], "chara_card_v2")
+                    png = _png_card(CARD_V2)
+                    png_import = client.post("/api/persona/import", json={
+                        "filename": "card.png",
+                        "content_base64": base64.b64encode(png).decode("ascii"),
+                    })
+                    self.assertEqual(png_import.status_code, 200)
+                    av = client.get("/api/persona/avatar")
+                    self.assertEqual(av.status_code, 200)
+                    self.assertEqual(av.headers["content-type"], "image/png")
+                    self.assertEqual(av.content, png)
                     self.assertEqual(client.post("/api/chat", json={"message": "hi"}).status_code, 503)
                 registry.close_all()
 

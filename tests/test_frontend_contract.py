@@ -144,9 +144,16 @@ def test_first_run_wizard_and_demo_contract_is_present():
             'id="demo-open"',
             'id="demo-banner"',
             'id="demo-exit"',
+            'data-persona-drop',
+            'id="persona-preview-world-toggle"',
+            'id="persona-preview-traits"',
+            'id="persona-export-dialog"',
+            'id="persona-export-v2"',
+            'id="profile-avatar"',
         ):
             assert marker in html, f"首次启动/演示模式缺少 {marker}"
         assert html.find('id="wizard-step-1"') < html.find('id="wizard-step-2"') < html.find('id="wizard-step-3"')
+        assert 'accept=".json,.png,application/json,image/png"' in html
     finally:
         client.close()
 
