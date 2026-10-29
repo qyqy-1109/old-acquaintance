@@ -107,6 +107,7 @@
   .tooltip { position: fixed; z-index: 100; max-width: 200px; padding: 5px 9px; border: 1px solid var(--color-line); border-radius: 5px; background: white; color: var(--color-ink); box-shadow: 0 3px 12px #25392512; font-size: 11px; pointer-events: none; }
   .persona-drop { transition: border-color .15s ease, background .15s ease, color .15s ease; }
   .persona-drop.is-dragging { border-color: var(--color-brand); background: var(--color-brand-soft); color: var(--color-brand); }
+  .message-focus .message-bubble { background: var(--color-brand-soft); box-shadow: 0 0 0 2px var(--color-brand); transition: background .2s ease, box-shadow .2s ease; }
   .skip-link { position: fixed; top: -80px; left: 16px; z-index: 120; padding: 10px 15px; background: white; color: var(--color-brand); }
   .skip-link:focus { top: 16px; }
 }

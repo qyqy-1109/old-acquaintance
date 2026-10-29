@@ -825,6 +825,7 @@ async function loadSessionMessages(sessionId) {
     messages.forEach((item, index) => {
       const view = message(item.role === "user" ? "user" : "assistant",
                             item.content || "", item.ts);
+      view.root.dataset.seq = String(item.seq);
       attachMessageActions(view, item, sessionId, index === messages.length - 1);
     });
     return messages.length;
@@ -832,6 +833,14 @@ async function loadSessionMessages(sessionId) {
     if (!isQuiet(error)) systemMessage("历史消息暂时无法加载：" + error.message);
     return 0;
   }
+}
+
+function focusMessage(seq) {
+  const node = log.querySelector(`[data-seq="${Number(seq)}"]`);
+  if (!node) return;
+  node.scrollIntoView({ block: "center", behavior: "smooth" });
+  node.classList.add("message-focus");
+  setTimeout(() => node.classList.remove("message-focus"), 2600);
 }
 
 async function showGreeting(epoch = client.epoch) {
@@ -909,13 +918,14 @@ async function openSessions() {
   await refreshSessions();
 }
 
-async function switchSession(sessionId) {
+async function switchSession(sessionId, { seq = null } = {}) {
   try {
     await client.selectSession(sessionId);
     const data = await client.json("/api/state");
     renderState(data);
     const count = await loadSessionMessages(sessionId);
     $("sessions-dialog").close();
+    if (seq !== null && count) focusMessage(seq);
     if (!count) await showGreeting();
     else { updateComposer(); input.focus(); }
     toast("已切换会话");
@@ -1011,7 +1021,7 @@ function renderSearchResults(data) {
       `${item.session_title} · ${item.role === "user" ? "你" : "她"} · ${sessionTime(item.ts)}`));
     row.addEventListener("click", () => {
       $("search-dialog").close();
-      switchSession(item.session);
+      switchSession(item.session, { seq: item.seq });
     });
     return row;
   });

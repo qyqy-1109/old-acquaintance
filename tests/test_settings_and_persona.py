@@ -202,6 +202,15 @@ class MessageStoreTests(unittest.TestCase):
                 ]
                 store._synced["s"] = 0
                 store.save()
+                items = {item["id"]: item for item in store.list_sessions()}
+                self.assertEqual(items["s"]["title"], "你好")
+                store.rename_session("s", "自定义标题")
+                store.sessions["s"].append({"role": "user", "content": "新消息", "ts": 3.0})
+                store.save()
+                items = {item["id"]: item for item in store.list_sessions()}
+                self.assertEqual(items["s"]["title"], "自定义标题")
+                store.sessions["s"].pop()
+                store.save()
                 question, removed = store.pop_last_turn("s")
                 self.assertEqual(question, "你好")
                 self.assertEqual(store.session_messages("s"), [])

@@ -338,6 +338,7 @@ class StorageMixin:
                             "VALUES(?,?,?,?)", (s, "", now, now))
                         self.db.execute(
                             "UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, s))
+                        self._solidify_session_title(s, msgs)
 
                 for s, text in self.summaries.items():
                     self.db.execute(

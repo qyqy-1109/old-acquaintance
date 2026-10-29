@@ -62,6 +62,22 @@ class SessionMixin:
             items.sort(key=lambda item: item["updated_at"], reverse=True)
             return items
 
+    @staticmethod
+    def _first_user_title(msgs: list[dict]) -> str:
+        for msg in msgs:
+            if msg.get("role") == "user" and str(msg.get("content") or "").strip():
+                return str(msg["content"]).strip().replace("\n", " ")[:24]
+        return ""
+
+    def _solidify_session_title(self, session_id: str, msgs: list[dict]) -> None:
+        """Persist the first user message as the title once; renames win."""
+        title = self._first_user_title(msgs)
+        if not title:
+            return
+        self.db.execute(
+            "UPDATE chat_sessions SET title=? WHERE id=? AND COALESCE(title,'')=''",
+            (title, session_id))
+
     def new_session(self, title: str = "") -> str:
         session_id = "chat-" + uuid.uuid4().hex[:12]
         now = time.time()
