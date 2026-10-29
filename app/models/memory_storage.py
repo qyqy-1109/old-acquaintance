@@ -320,6 +320,7 @@ class StorageMixin:
                 now = time.time()
                 for s, msgs in list(self.sessions.items()):
                     done = self._synced.get(s, 0)
+                    changed = len(msgs) != done
                     if len(msgs) < done:      # 会话被清空过，库里的旧消息要跟着删
                         self.db.execute("DELETE FROM messages WHERE session=?", (s,))
                         done = 0
@@ -331,11 +332,12 @@ class StorageMixin:
                             (s, i, m.get("role", "user"), m.get("content"),
                              m.get("ts"), 1 if m.get("greeting") else 0))
                     self._synced[s] = len(msgs)
-                    self.db.execute(
-                        "INSERT OR IGNORE INTO chat_sessions(id,title,created_at,updated_at) "
-                        "VALUES(?,?,?,?)", (s, "", now, now))
-                    self.db.execute(
-                        "UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, s))
+                    if changed:
+                        self.db.execute(
+                            "INSERT OR IGNORE INTO chat_sessions(id,title,created_at,updated_at) "
+                            "VALUES(?,?,?,?)", (s, "", now, now))
+                        self.db.execute(
+                            "UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, s))
 
                 for s, text in self.summaries.items():
                     self.db.execute(
