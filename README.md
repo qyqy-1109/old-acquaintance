@@ -13,6 +13,8 @@
 - **读路径**：按语义阈值召回长期记忆，叠加世界书、状态槽位、约束、今日/明日约定和最近窗口；过期约定不再冒充待办。
 - **共同世界**：人格模板、世界书、用户画像、关系阶段、生活线、连续性话题分别落盘，互不越权。
 - **多用户**：每个账号一套独立数据目录 `users/<id>/`，令牌鉴权 + LRU 实例缓存。
+- **首次启动**：三步向导（模型 → 账号 → 可选人格卡片）；没有 Key 可进入只读演示。
+- **模型设置**：网页填写地址/Key/模型、测试连接、脱敏显示；真实环境变量注入的 Key 在页面只读。
 - **会话**：新建、切换、改名、删除；切回旧会话会加载历史消息，不重新生成开场白。
 - **消息操作**：编辑、删除单条消息；重新生成最后一条助手回复。
 - **搜索**：跨会话消息、长期记忆和世界书；点消息结果会切到对应会话并高亮具体气泡。
@@ -30,7 +32,7 @@
 ```
 浏览器（原生 HTML / Tailwind / ES Modules / SSE）
         │
-FastAPI controllers ── 鉴权、用户、静态资源
+FastAPI controllers ── chat / sessions / persona / settings / search / export
         │
 ChatService ── 记忆读写、生活线、连续性、关系、主动说话
         │
@@ -80,17 +82,25 @@ python openai_hello.py
 
 ### 配置
 
-所有配置都支持环境变量覆盖，**环境变量优先于 `.env`**。最少需要：
+所有配置都支持环境变量覆盖。优先级：**真实环境变量 > `DATA_DIR/settings.json` > `.env` > 代码默认值**。最少需要：
 
 | 变量 | 用途 |
 |---|---|
-| `WB_API_KEY` / `WB_BASE_URL` | 后台任务（提炼、摘要、画像、开场白） |
+| `WB_API_KEY` / `WB_BASE_URL` | 后台任务（提炼、摘要、画像、开场白）；Key 留空时复用 `WB_CHAT_API_KEY` |
 | `WB_CHAT_API_KEY` / `WB_CHAT_BASE_URL` | 主对话；留空复用 `WB_API_KEY` |
 | `WB_EMBED_API_KEY` / `WB_EMBED_BASE_URL` | embedding；缺了记忆召回会瘫痪 |
 | `WB_MODEL` / `WB_EMBED_MODEL` / `WB_EMBED_DIMENSIONS` | 模型名与向量维度 |
 
 可选能力：`WB_AMAP_KEY`（天气/附近）、`WB_EMOTION_*`（情绪）、`WB_TTS_*`（语音）。
 完整列表见 [`.env.example`](.env.example) 与 [`docs/技术栈.md`](docs/技术栈.md)。
+
+### 设置与密钥
+
+- 网页「模型与密钥」可以配置主对话、后台任务和 embedding；保存时尝试热重建服务。
+- Key 只以脱敏形式返回（如 `sk-1…cdef`），不会把明文重新显示在页面上。
+- 如果真实环境变量已经提供某个值，该字段在页面只读；页面写入的 `DATA_DIR/settings.json` 不会覆盖它。
+- 有对话或后台记忆正在写入时，保存会提示“重启后完全生效”，不会强行关闭正在使用的实例。
+- 切换 embedding 模型或维度后，旧向量需要重建；不要把它当成无损热切换。
 
 ### 人格卡片
 
@@ -141,16 +151,27 @@ python benchmark/run_persona.py                     # 13 条人格探针
 
 评测结果不提交到仓库（`benchmark/results/` 已被忽略）。
 
+### CI
+
+GitHub Actions 会跑：
+
+- `python -m compileall` 全量语法检查
+- `ruff check --select E9,F63,F7,F82`（未定义名/语法类错误）
+- `tests/test_pure.py` + 密码/身份/前端契约/设置与人格测试
+- `node --check` 前端 JS + `npm run test:frontend`
+
+Docker 构建和 Playwright 浏览器回归未接进 CI；浏览器脚本保留在 `tests/*-browser.mjs` 供本地运行。
+
 ---
 
 ## 目录结构
 
 ```
 app/
-  controllers/      HTTP 与 SSE
+  controllers/      chat / auth / settings / persona / sessions / search / export
   services/         对话编排、鉴权、worker、主动说话、TTS
-  models/           记忆、世界书、槽位、生活、关系、连续性、人格、画像
-  utils/            LLM JSON、天气、地点、定位、文本相似度
+  models/           记忆（含会话/消息）、世界书、槽位、生活、关系、连续性、人格、画像
+  utils/            LLM JSON、天气、地点、定位、文本相似度、设置/人格卡片解析
   views/            原生前端与已编译静态资源
 benchmark/          记忆/人格/陪伴评测
 tests/              Python + Node 测试
@@ -158,6 +179,7 @@ docs/               架构、技术栈、设计决策与调研
 ```
 
 数据文件默认在项目根目录；设置 `DATA_DIR` 可整体迁移。多用户数据在 `DATA_DIR/users/<id>/`。
+`DATA_DIR/settings.json` 保存网页写入的模型设置；`avatar.bin` 按用户数据目录保存导入的头像；两者都被 `.gitignore` 排除。
 
 ---
 
