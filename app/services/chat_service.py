@@ -1794,6 +1794,21 @@ class ChatService:
     def session_messages(self, session_id: str) -> list[dict]:
         return self.store.session_messages(session_id)
 
+    def edit_message(self, session_id: str, seq: int, content: str) -> None:
+        self.store.edit_message(session_id, seq, content)
+
+    def delete_message(self, session_id: str, seq: int) -> None:
+        self.store.delete_message(session_id, seq)
+
+    def regenerate_last(self) -> dict:
+        session_id = self.store.session
+        question, removed = self.store.pop_last_turn(session_id)
+        try:
+            return self.chat(question)
+        except Exception:
+            self.store.restore_turn(session_id, removed)
+            raise
+
     # ==================== 收尾 ====================
 
     def _personality_conflicts(self, patch: dict) -> list[dict]:

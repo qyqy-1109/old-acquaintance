@@ -13,6 +13,7 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install -r requirements.txt
+      - run: python -m compileall -q app tests
       - run: python tests/test_pure.py
       - run: python -m unittest tests.test_password_auth tests.test_identity_transport tests.test_frontend_contract tests.test_settings_and_persona
 
@@ -25,4 +26,6 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - run: node --check app/views/js/app.js
+      - run: node --check app/views/js/api.js
       - run: npm run test:frontend

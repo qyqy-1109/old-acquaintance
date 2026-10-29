@@ -20,6 +20,7 @@ from app.controllers.chat_controller import router
 from app.controllers.auth_controller import router as auth_router
 from app.controllers.export_controller import router as export_router
 from app.controllers.persona_controller import router as persona_router
+from app.controllers.search_controller import router as search_router
 from app.controllers.session_controller import router as session_router
 from app.controllers.settings_controller import router as settings_router
 from app.log import get
@@ -171,6 +172,7 @@ app.include_router(settings_router)
 app.include_router(persona_router)
 app.include_router(session_router)
 app.include_router(export_router)
+app.include_router(search_router)
 app.mount("/static", StaticFiles(directory=config.VIEW_DIR), name="static")
 
 

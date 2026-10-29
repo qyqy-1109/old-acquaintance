@@ -4,15 +4,18 @@ import base64
 import io
 import struct
 import tempfile
+import time
 import unittest
 import zipfile
 import zlib
 from contextlib import ExitStack
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app import config
 from app.controllers import settings_controller
+from app.models.memory import MemoryStore
 from app.models.personality import Personality
 from app.models.world import WorldBook
 from app.services.chat_service import ChatService
@@ -187,6 +190,32 @@ class NoKeyStartupTests(unittest.TestCase):
             self.assertFalse(result["embedding"]["ok"])
 
 
+class MessageStoreTests(unittest.TestCase):
+    def test_edit_delete_and_regenerate_pair(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = MemoryStore(SimpleNamespace(), path=os.path.join(d, "memory.db"),
+                                embed_model="offline-test")
+            try:
+                store.sessions["s"] = [
+                    {"role": "user", "content": "你好", "ts": 1.0},
+                    {"role": "assistant", "content": "你好呀", "ts": 2.0},
+                ]
+                store._synced["s"] = 0
+                store.save()
+                question, removed = store.pop_last_turn("s")
+                self.assertEqual(question, "你好")
+                self.assertEqual(store.session_messages("s"), [])
+                store.restore_turn("s", removed)
+                self.assertEqual(len(store.session_messages("s")), 2)
+                store.edit_message("s", 1, "改过的回复")
+                self.assertEqual(store.session_messages("s")[1]["content"], "改过的回复")
+                store.delete_message("s", 0)
+                self.assertEqual([m["role"] for m in store.session_messages("s")],
+                                 ["assistant"])
+            finally:
+                store.db.close()
+
+
 class ApiSmokeTests(unittest.TestCase):
     def test_health_settings_persona_and_chat_guard(self):
         with tempfile.TemporaryDirectory() as d:
@@ -262,6 +291,25 @@ class ApiSmokeTests(unittest.TestCase):
                         self.assertIn("memory.db", archive.namelist())
                         self.assertNotIn("settings.json", archive.namelist())
                     self.assertEqual(client.delete(f"/api/sessions/{session_id}").status_code, 200)
+                    service = registry.get("")
+                    with service.store._lock:
+                        service.store.sessions.setdefault("default", []).append({
+                            "role": "assistant", "content": "测试问候",
+                            "ts": time.time(), "greeting": True,
+                        })
+                    service.store.save()
+                    messages = client.get("/api/sessions/default/messages").json()["messages"]
+                    self.assertTrue(messages)
+                    edited = client.patch("/api/sessions/default/messages/0",
+                                          json={"content": "改过的问候"})
+                    self.assertEqual(edited.status_code, 200)
+                    self.assertEqual(edited.json()["messages"][0]["content"], "改过的问候")
+                    deleted = client.delete("/api/sessions/default/messages/0")
+                    self.assertEqual(deleted.status_code, 200)
+                    self.assertEqual(deleted.json()["messages"], [])
+                    found = client.get("/api/search", params={"q": "测试"})
+                    self.assertEqual(found.status_code, 200)
+                    self.assertTrue(found.json()["world"])
                 registry.close_all()
 
 

@@ -134,3 +134,89 @@ class SessionMixin:
         return [{"seq": int(row["seq"]), "role": row["role"],
                  "content": row["content"] or "", "ts": row["ts"],
                  "greeting": bool(row["greeting"])} for row in rows]
+
+    def _rewrite_session_messages(self, session_id: str) -> None:
+        """Reindex messages after delete/regenerate. Caller holds the lock and db."""
+        msgs = self.sessions.get(session_id, [])
+        self.db.execute("DELETE FROM messages WHERE session=?", (session_id,))
+        for index, msg in enumerate(msgs):
+            self.db.execute(
+                "INSERT INTO messages(session,seq,role,content,ts,greeting) "
+                "VALUES(?,?,?,?,?,?)",
+                (session_id, index, msg.get("role", "user"), msg.get("content"),
+                 msg.get("ts"), 1 if msg.get("greeting") else 0))
+        self._synced[session_id] = len(msgs)
+        self.db.execute(
+            "INSERT OR IGNORE INTO chat_sessions(id,title,created_at,updated_at) "
+            "VALUES(?,?,?,?)", (session_id, "", time.time(), time.time()))
+        self.db.execute(
+            "UPDATE chat_sessions SET updated_at=? WHERE id=?",
+            (time.time(), session_id))
+
+    def edit_message(self, session_id: str, seq: int, content: str) -> str:
+        content = str(content or "").strip()
+        if not content:
+            raise ValueError("消息内容不能为空")
+        session_id = str(session_id or "").strip()
+        with self._lock, self.db:
+            row = self.db.execute(
+                "SELECT role FROM messages WHERE session=? AND seq=?",
+                (session_id, int(seq))).fetchone()
+            if not row:
+                raise KeyError(seq)
+            if int(seq) < int(self.summary_cursor.get(session_id, 0)):
+                raise ValueError("这条消息已经被摘要，不能直接编辑")
+            self.db.execute(
+                "UPDATE messages SET content=? WHERE session=? AND seq=?",
+                (content, session_id, int(seq)))
+            msgs = self.sessions.get(session_id)
+            if msgs is not None and 0 <= int(seq) < len(msgs):
+                msgs[int(seq)]["content"] = content
+            self.db.execute(
+                "UPDATE chat_sessions SET updated_at=? WHERE id=?",
+                (time.time(), session_id))
+        return content
+
+    def delete_message(self, session_id: str, seq: int) -> None:
+        session_id = str(session_id or "").strip()
+        with self._lock, self.db:
+            row = self.db.execute(
+                "SELECT 1 FROM messages WHERE session=? AND seq=?",
+                (session_id, int(seq))).fetchone()
+            if not row:
+                raise KeyError(seq)
+            if int(seq) < int(self.summary_cursor.get(session_id, 0)):
+                raise ValueError("这条消息已经被摘要，不能直接删除")
+            msgs = self.sessions.get(session_id)
+            if msgs is None:
+                msgs = [{"role": r["role"], "content": r["content"] or "",
+                         "ts": r["ts"], "greeting": bool(r["greeting"])}
+                        for r in self.db.execute(
+                            "SELECT role,content,ts,greeting FROM messages "
+                            "WHERE session=? ORDER BY seq", (session_id,))]
+                self.sessions[session_id] = msgs
+            if 0 <= int(seq) < len(msgs):
+                msgs.pop(int(seq))
+            self._rewrite_session_messages(session_id)
+
+    def pop_last_turn(self, session_id: str) -> tuple[str, list[dict]]:
+        """Remove the final user+assistant pair for regeneration."""
+        with self._lock, self.db:
+            msgs = self.sessions.get(session_id, [])
+            if len(msgs) < 2:
+                raise ValueError("没有可重新生成的一轮对话")
+            assistant, user = msgs[-1], msgs[-2]
+            if assistant.get("role") != "assistant" or user.get("role") != "user":
+                raise ValueError("最后一条不是可重新生成的助手回复")
+            start = len(msgs) - 2
+            if start < int(self.summary_cursor.get(session_id, 0)):
+                raise ValueError("这一轮已经被摘要，不能重新生成")
+            removed = msgs[start:]
+            del msgs[start:]
+            self._rewrite_session_messages(session_id)
+        return str(user.get("content") or ""), removed
+
+    def restore_turn(self, session_id: str, removed: list[dict]) -> None:
+        with self._lock, self.db:
+            self.sessions.setdefault(session_id, []).extend(removed)
+            self._rewrite_session_messages(session_id)

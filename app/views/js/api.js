@@ -201,6 +201,29 @@ export class ApiClient {
     return this.json(`/api/sessions/${encodeURIComponent(sessionId)}/messages`);
   }
 
+  async editMessage(sessionId, seq, content) {
+    return this.json(`/api/sessions/${encodeURIComponent(sessionId)}/messages/${seq}`, {
+      method: "PATCH", body: { content },
+    });
+  }
+
+  async deleteMessage(sessionId, seq) {
+    return this.json(`/api/sessions/${encodeURIComponent(sessionId)}/messages/${seq}`, {
+      method: "DELETE",
+    });
+  }
+
+  async regenerateMessage(sessionId, seq) {
+    return this.json(
+      `/api/sessions/${encodeURIComponent(sessionId)}/messages/${seq}/regenerate`,
+      { method: "POST", body: {} },
+    );
+  }
+
+  async search(query) {
+    return this.json("/api/search?q=" + encodeURIComponent(query));
+  }
+
   async claimLegacy() {
     return this.json("/api/auth/legacy", { method: "POST" });
   }

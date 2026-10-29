@@ -10,7 +10,7 @@ const icons = ["house", "messages-square", "book-open", "list-tree", "clock-3", 
   "heart-pulse", "volume-2", "volume-x", "panel-left", "x", "log-out", "arrow-up", "square",
   "plus", "trash-2", "refresh-cw", "wand-sparkles", "circle-check", "chevron-right", "shield-check",
   "key-round", "user-round", "triangle-alert", "arrow-down", "command", "message-square-warning",
-  "copy", "check", "loader-circle", "eye", "eye-off", "chevron-down"];
+  "copy", "check", "loader-circle", "eye", "eye-off", "chevron-down", "pencil", "search"];
 for (const name of icons) {
   await copyFile(path.join(root, "node_modules/lucide-static/icons", name + ".svg"),
     path.join(assets, "icons", name + ".svg"));

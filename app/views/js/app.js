@@ -756,14 +756,78 @@ async function login() {
   } finally { setLoginBusy(false); }
 }
 
+function attachMessageActions(view, item, sessionId, isLast) {
+  let tools = view.content.querySelector(".message-tools");
+  if (!tools) {
+    tools = element("div", "message-tools");
+    view.content.append(tools);
+  }
+  if (item.role === "assistant" && isLast) {
+    const regenerate = iconButton("refresh-cw", "重新生成");
+    regenerate.addEventListener("click", () => regenerateMessage(sessionId, item, regenerate));
+    tools.append(regenerate);
+  }
+  const edit = iconButton("pencil", "编辑消息");
+  edit.addEventListener("click", () => editMessage(sessionId, item));
+  const remove = iconButton("trash-2", "删除消息");
+  remove.addEventListener("click", () => deleteMessage(sessionId, item));
+  tools.append(edit, remove);
+}
+
+async function editMessage(sessionId, item) {
+  const text = prompt("编辑消息", item.content || "");
+  if (text === null) return;
+  if (!text.trim()) { toast("消息内容不能为空"); return; }
+  try {
+    await client.editMessage(sessionId, item.seq, text.trim());
+    await loadSessionMessages(sessionId);
+    toast("消息已保存");
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function deleteMessage(sessionId, item) {
+  if (!confirm("删除这条消息？长期记忆不会被删除。")) return;
+  try {
+    const result = await client.deleteMessage(sessionId, item.seq);
+    const messages = result.messages || [];
+    log.replaceChildren();
+    messages.forEach((messageItem, index) =>
+      attachMessageActions(message(messageItem.role === "user" ? "user" : "assistant",
+        messageItem.content, messageItem.ts), messageItem, sessionId,
+        index === messages.length - 1));
+    toast("消息已删除");
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function regenerateMessage(sessionId, item, button) {
+  setButtonBusy(button, true);
+  try {
+    await client.regenerateMessage(sessionId, item.seq);
+    await loadSessionMessages(sessionId);
+    await refreshState();
+    toast("已重新生成");
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
 async function loadSessionMessages(sessionId) {
   try {
     const data = await client.sessionMessages(sessionId);
+    const messages = data.messages || [];
     log.replaceChildren();
-    for (const item of data.messages || []) {
-      message(item.role === "user" ? "user" : "assistant", item.content || "", item.ts);
-    }
-    return (data.messages || []).length;
+    messages.forEach((item, index) => {
+      const view = message(item.role === "user" ? "user" : "assistant",
+                            item.content || "", item.ts);
+      attachMessageActions(view, item, sessionId, index === messages.length - 1);
+    });
+    return messages.length;
   } catch (error) {
     if (!isQuiet(error)) systemMessage("历史消息暂时无法加载：" + error.message);
     return 0;
@@ -915,6 +979,67 @@ async function downloadAllData() {
   }
 }
 
+function renderSearchResults(data) {
+  const box = $("search-results");
+  box.replaceChildren();
+  const section = (title, rows, render) => {
+    if (!rows.length) return;
+    const wrap = element("section");
+    wrap.append(element("h3", "mb-2 text-sm font-medium", `${title}（${rows.length}）`));
+    const list = element("div", "space-y-2");
+    rows.forEach((row, index) => list.append(render(row, index)));
+    wrap.append(list);
+    box.append(wrap);
+  };
+  section("长期记忆", data.memories || [], item => {
+    const row = element("div", "rounded-lg border border-line bg-white p-3 text-sm leading-6");
+    row.append(element("p", "whitespace-pre-wrap", displayMemoryText(item.text)));
+    row.append(element("p", "mt-1 text-xs text-muted",
+      [item.kind, item.event_date, item.actor].filter(Boolean).join(" · ")));
+    return row;
+  });
+  section("世界书", data.world || [], item => {
+    const row = element("div", "rounded-lg border border-line bg-white p-3 text-sm leading-6");
+    row.append(element("p", "whitespace-pre-wrap", displayMemoryText(item.text)));
+    return row;
+  });
+  section("消息", data.messages || [], item => {
+    const row = element("button", "block w-full rounded-lg border border-line bg-white p-3 text-left text-sm leading-6");
+    row.type = "button";
+    row.append(element("p", "whitespace-pre-wrap", displayMemoryText(item.content)));
+    row.append(element("p", "mt-1 text-xs text-muted",
+      `${item.session_title} · ${item.role === "user" ? "你" : "她"} · ${sessionTime(item.ts)}`));
+    row.addEventListener("click", () => {
+      $("search-dialog").close();
+      switchSession(item.session);
+    });
+    return row;
+  });
+  if (!box.children.length) box.append(element("p", "py-6 text-sm text-muted", "没有找到相关内容。"));
+}
+
+async function runSearch(event) {
+  event.preventDefault();
+  const query = $("search-input").value.trim();
+  if (!query) { setError("search-error", "请输入要搜索的内容。"); return; }
+  setError("search-error");
+  setButtonBusy($("search-submit"), true);
+  try {
+    renderSearchResults(await client.search(query));
+  } catch (error) {
+    setError("search-error", error.message);
+  } finally {
+    setButtonBusy($("search-submit"), false);
+  }
+}
+
+function openSearch() {
+  setError("search-error");
+  $("search-results").replaceChildren();
+  if (!$("search-dialog").open) $("search-dialog").showModal();
+  $("search-input").focus();
+}
+
 async function enterApp(data, { demo = false } = {}) {
   demoMode = demo;
   const epoch = client.epoch;
@@ -928,6 +1053,7 @@ async function enterApp(data, { demo = false } = {}) {
   $("persona-export").disabled = demo;
   $("export-all").disabled = demo;
   $("sessions-open").disabled = demo;
+  $("search-open").disabled = demo;
   $("command-open").disabled = demo;
   $("feedback-open").disabled = demo;
   log.replaceChildren();
@@ -1546,6 +1672,8 @@ for (const [label, command] of commands) {
 $("login-form").addEventListener("submit", event => { event.preventDefault(); login(); });
 $("settings-open").addEventListener("click", openSettings);
 $("sessions-open").addEventListener("click", openSessions);
+$("search-open").addEventListener("click", openSearch);
+$("search-form").addEventListener("submit", runSearch);
 $("session-new").addEventListener("click", newSession);
 $("export-all").addEventListener("click", downloadAllData);
 $("wizard-model").addEventListener("submit", saveWizardModel);

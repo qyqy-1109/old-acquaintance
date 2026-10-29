@@ -121,6 +121,7 @@
         </div>
         <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <button id="refresh-state" class="icon-button" type="button" aria-label="刷新状态" title="刷新状态"><i data-icon="refresh-cw" aria-hidden="true"></i></button>
+          <button id="search-open" class="icon-button" type="button" aria-label="搜索" title="搜索"><i data-icon="search" aria-hidden="true"></i></button>
           <button id="sessions-open" class="icon-button" type="button" aria-label="会话" title="会话"><i data-icon="messages-square" aria-hidden="true"></i></button>
           <button id="settings-open" class="icon-button" type="button" aria-label="设置" title="设置"><i data-icon="key-round" aria-hidden="true"></i></button>
           <button id="tts-toggle" class="icon-button" type="button" aria-label="关闭语音" title="关闭语音" aria-pressed="true"><i data-icon="volume-2" aria-hidden="true"></i></button>
@@ -351,6 +352,15 @@
       <p id="sessions-error" class="error-message mt-4" role="alert" hidden></p>
       <div id="sessions-list" class="mt-4 max-h-[60dvh] divide-y divide-line overflow-y-auto border-y border-line"></div>
     </div>
+  </dialog>
+
+  <dialog id="search-dialog" class="modal" aria-labelledby="search-title">
+    <form id="search-form" class="p-6 sm:p-7">
+      <div class="mb-5 flex items-center justify-between gap-4"><h2 id="search-title" class="text-lg font-semibold">搜索</h2><button type="button" class="icon-button small" data-close="search-dialog" aria-label="关闭" title="关闭"><i data-icon="x" aria-hidden="true"></i></button></div>
+      <div class="flex gap-2"><input id="search-input" class="field min-w-0 flex-1" maxlength="80" placeholder="搜记忆、世界书或消息"><button id="search-submit" type="submit" class="primary-button shrink-0">搜索</button></div>
+      <p id="search-error" class="error-message mt-4" role="alert" hidden></p>
+      <div id="search-results" class="mt-5 max-h-[60dvh] space-y-5 overflow-y-auto"></div>
+    </form>
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden><i data-icon="circle-check" aria-hidden="true"></i><span id="toast-text"></span><button id="toast-action" type="button" class="ml-2 font-medium underline underline-offset-4" hidden>播放</button></div>
