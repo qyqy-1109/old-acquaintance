@@ -124,7 +124,12 @@ def _v2(data: dict, warnings: list[str]) -> dict:
     if data.get("extensions"):
         warnings.append("卡片扩展字段（extensions）已忽略。")
     book = data.get("character_book")
-    world_count = len((book or {}).get("entries") or []) if isinstance(book, dict) else 0
+    if isinstance(book, dict):
+        world_count = len(book.get("entries") or [])
+    elif isinstance(book, list):
+        world_count = len(book)
+    else:
+        world_count = 0
     if world_count:
         warnings.append(f"角色卡带有 {world_count} 条世界书，将一并导入。")
     return {
