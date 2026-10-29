@@ -45,7 +45,7 @@ class ProactiveMotiveTests(unittest.TestCase):
         self.service = self.new_service()
         self.stack.enter_context(patch.object(self.service, "_advance_life", return_value=None))
         self.prompts = []
-        self.payload = {"speak": True, "text": "你的面试还让我有点惦记", "reminder_ids": []}
+        self.payload = {"speak": True, "text": "你的考试还让我有点惦记", "reminder_ids": []}
         self.on_model = None
 
         def generate(client, model, messages, **kwargs):
@@ -72,7 +72,7 @@ class ProactiveMotiveTests(unittest.TestCase):
             service.store.save()
         return seq
 
-    def topic(self, quote="明天面试，我有点紧张", topic="面试", service=None, **fields):
+    def topic(self, quote="明天考试，我有点紧张", topic="考试", service=None, **fields):
         service = service or self.service
         seq = self.source(quote, service=service)
         update = dict(actor="user", state="experience", status="open",
@@ -121,7 +121,7 @@ class ProactiveMotiveTests(unittest.TestCase):
         self.payload["motive_ids"] = ["unused-until-candidate-api"]
         self.service.proactive_tick()
         self.assertEqual(len(self.prompts), 1, "新话题不能被整格报备闸门挡住")
-        self.assertIn("面试", self.prompts[0])
+        self.assertIn("考试", self.prompts[0])
 
     def test_candidates_have_stable_sources_for_topic_life_promise_and_her_intention(self):
         self.topic()
@@ -251,14 +251,14 @@ class ProactiveMotiveTests(unittest.TestCase):
     def test_delivery_invalidates_closed_topic_permanently_without_claiming_user_saw_it(self):
         row = self.topic()
         candidate = self.candidate("topic")
-        ids = self.enqueue(["面试那件事我还惦记着"], [candidate])
+        ids = self.enqueue(["考试那件事我还惦记着"], [candidate])
         self.assertEqual(len(ids), 1)
-        self.revise(row, "面试不想聊了，别再提", status="suppressed")
+        self.revise(row, "考试不想聊了，别再提", status="suppressed")
         self.assertEqual(self.service.take_pending_say(), [])
         invalidations = self.service.store.db.execute(
             "SELECT count(*) FROM events WHERE kind='pending_motive_invalid'").fetchone()[0]
         self.assertEqual(invalidations, 1)
-        self.revise(row, "面试我又想聊了", status="open")
+        self.revise(row, "考试我又想聊了", status="open")
         self.assertEqual(self.service.take_pending_say(), [])
         stale = self.service.speaker.pending_items()
         self.assertEqual(len(stale), 1)
@@ -269,7 +269,7 @@ class ProactiveMotiveTests(unittest.TestCase):
     def test_delivery_revalidates_source_digest_and_hidden_life(self):
         row = self.topic()
         candidate = self.candidate("topic")
-        self.enqueue(["面试那件事我还记着"], [candidate])
+        self.enqueue(["考试那件事我还记着"], [candidate])
         with self.service.store._lock, self.service.store.db:
             self.service.store.db.execute("UPDATE messages SET content='旧来源已被更正' WHERE session=? AND seq=?",
                                           (row["session"], row["seq"]))
@@ -286,7 +286,7 @@ class ProactiveMotiveTests(unittest.TestCase):
     def test_valid_pending_requires_client_ack_and_one_batch_counts_once(self):
         self.topic()
         candidate = self.candidate("topic")
-        ids = self.enqueue(["突然想到你", "面试的事不用一个人憋着"], [candidate])
+        ids = self.enqueue(["突然想到你", "考试的事不用一个人憋着"], [candidate])
         first = self.service.take_pending_say()
         second = self.service.take_pending_say()
         self.assertEqual([row["id"] for row in first], ids)
@@ -302,7 +302,7 @@ class ProactiveMotiveTests(unittest.TestCase):
 
         def submit():
             barrier.wait(timeout=5)
-            return self.enqueue(["面试的事我还记着"], [candidate])
+            return self.enqueue(["考试的事我还记着"], [candidate])
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = [pool.submit(submit) for unused in range(2)]
@@ -317,8 +317,8 @@ class ProactiveMotiveTests(unittest.TestCase):
         other = self.new_service("other_user")
         self.topic(service=other)
         second = self.candidate("topic", service=other)
-        self.assertTrue(self.enqueue(["面试那件事我还记着"], [first]))
-        self.assertTrue(self.enqueue(["面试那件事我还记着"], [second], service=other))
+        self.assertTrue(self.enqueue(["考试那件事我还记着"], [first]))
+        self.assertTrue(self.enqueue(["考试那件事我还记着"], [second], service=other))
         self.assertEqual(len(self.service.speaker.pending_items()), 1)
         self.assertEqual(len(other.speaker.pending_items()), 1)
 
@@ -346,7 +346,7 @@ class ProactiveMotiveTests(unittest.TestCase):
     def test_same_slot_claimed_a_does_not_block_independent_b(self):
         self.topic()
         first = self.candidate("topic")
-        self.assertTrue(self.enqueue(["面试那件事我还记着"], [first]))
+        self.assertTrue(self.enqueue(["考试那件事我还记着"], [first]))
         with patch("time.time", return_value=self.now + 600):
             self.topic("牙疼还没有好", topic="牙疼")
             second = self.candidate("topic", "牙疼")
@@ -365,7 +365,7 @@ class ProactiveMotiveTests(unittest.TestCase):
 
         def submit(service, candidate):
             barrier.wait(timeout=5)
-            return self.enqueue(["面试那件事我还记着"], [candidate], service=service)
+            return self.enqueue(["考试那件事我还记着"], [candidate], service=service)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = [pool.submit(submit, self.service, first), pool.submit(submit, other, second)]
@@ -382,8 +382,8 @@ class ProactiveMotiveTests(unittest.TestCase):
         first = self.candidate("topic")
         self.topic("牙疼还没好", topic="牙疼")
         second = self.candidate("topic", "牙疼")
-        self.revise(first_row, "面试不想聊了，别再提", status="suppressed")
-        self.assertEqual(self.enqueue(["面试和牙疼都惦记着"], [first, second]), [])
+        self.revise(first_row, "考试不想聊了，别再提", status="suppressed")
+        self.assertEqual(self.enqueue(["考试和牙疼都惦记着"], [first, second]), [])
         self.assertEqual(self.service.speaker.pending_items(), [])
         self.assertIn(second["id"], [row["id"] for row in self.candidates()])
 
@@ -392,7 +392,7 @@ class ProactiveMotiveTests(unittest.TestCase):
         first = self.candidate("topic")
         second_row = self.topic("牙疼还没好", topic="牙疼")
         second = self.candidate("topic", "牙疼")
-        self.assertTrue(self.enqueue(["面试和牙疼都让我牵挂"], [first, second]))
+        self.assertTrue(self.enqueue(["考试和牙疼都让我牵挂"], [first, second]))
         self.revise(second_row, "牙疼已经好了", status="resolved")
         self.assertEqual(self.service.take_pending_say(), [])
         self.assertEqual(self.service.continuity.get(first_row["id"])["status"], "open")
@@ -400,8 +400,8 @@ class ProactiveMotiveTests(unittest.TestCase):
     def test_invalidated_delivery_survives_restart_without_client_ack(self):
         row = self.topic()
         candidate = self.candidate("topic")
-        pending = self.enqueue(["面试还让我惦记"], [candidate])[0]
-        self.revise(row, "面试不想聊了，别再提", status="suppressed")
+        pending = self.enqueue(["考试还让我惦记"], [candidate])[0]
+        self.revise(row, "考试不想聊了，别再提", status="suppressed")
         self.assertEqual(self.service.take_pending_say(), [])
         reopened = self.new_service()
         self.assertEqual(reopened.take_pending_say(), [])
@@ -461,8 +461,8 @@ class ProactiveMotiveTests(unittest.TestCase):
         promise = self.candidate("promise")
         self.payload.update(speak=True, motive_ids=[topic["id"], promise["id"]],
                             reminder_ids=[promise["source_id"]],
-                            text="团子没扒窗户吧\n@@@\n面试那件事我还惦记着")
-        self.assertEqual(self.service.proactive_tick(), "面试那件事我还惦记着")
+                            text="团子没扒窗户吧\n@@@\n考试那件事我还惦记着")
+        self.assertEqual(self.service.proactive_tick(), "考试那件事我还惦记着")
         self.assertIn(promise["id"], [row["id"] for row in self.candidates()])
         self.assertFalse(self.service.relationship.promise_items()[0].get("reminded_at"))
 
@@ -479,7 +479,7 @@ class ProactiveMotiveTests(unittest.TestCase):
             return real(item, now, **kwargs)
 
         with patch.object(self.service.speaker, "_motive_current", side_effect=validate):
-            self.assertTrue(self.enqueue(["面试还让我惦记着"], [candidate]))
+            self.assertTrue(self.enqueue(["考试还让我惦记着"], [candidate]))
 
     def test_other_instance_completed_promise_invalidates_cached_source(self):
         self.service.relationship.add_promise("一起去书店", due_at=self.now - 60)
@@ -496,10 +496,10 @@ class ProactiveMotiveTests(unittest.TestCase):
         first = self.candidate("topic")
         self.topic("牙疼还没好", topic="牙疼")
         second = self.candidate("topic", "牙疼")
-        self.service.speaker.enqueue("面试那件事我还惦记着")
+        self.service.speaker.enqueue("考试那件事我还惦记着")
         self.service.speaker._set_ts("her_last_ts", self.now - 7200)
         self.payload.update(speak=True, motive_ids=[first["id"], second["id"]],
-                            text="面试那件事我还惦记着\n@@@\n你的牙疼还让我有点担心")
+                            text="考试那件事我还惦记着\n@@@\n你的牙疼还让我有点担心")
         self.assertEqual(self.service.proactive_tick(), "")
         self.assertEqual(self.service.store.db.execute(
             "SELECT count(*) FROM proactive_motive_claims").fetchone()[0], 0)
@@ -529,11 +529,11 @@ class ProactiveMotiveTests(unittest.TestCase):
         topic = self.candidate("topic")
         self.service.relationship.add_promise("一起去书店", due_at=self.now - 60)
         promise = self.candidate("promise")
-        self.service.speaker.enqueue("面试那件事我还惦记着")
+        self.service.speaker.enqueue("考试那件事我还惦记着")
         self.service.speaker._set_ts("her_last_ts", self.now - 7200)
         self.payload.update(speak=True, motive_ids=[topic["id"], promise["id"]],
                             reminder_ids=[promise["source_id"]],
-                            text="面试那件事我还惦记着\n@@@\n还记得一起去书店")
+                            text="考试那件事我还惦记着\n@@@\n还记得一起去书店")
         self.assertEqual(self.service.proactive_tick(), "")
         self.assertEqual(self.service.store.db.execute(
             "SELECT count(*) FROM proactive_motive_claims").fetchone()[0], 0)

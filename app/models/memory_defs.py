@@ -195,7 +195,7 @@ EXTRACT_PROMPT = """你是记忆提炼器。判断下面这一轮对话里有没
 - 语气情绪、寒暄客套、纯吐槽、没有信息量的话，一律判空。
 - facts / world / constraints / drop / self / slots 每类最多 3 条；没有就给空数组，不要为了凑数硬编。
 
-7. continuity —— 有来源的未完话题与她的短期选择。每条包含 topic（稳定的最小主题短语，如“面试”）、
+7. continuity —— 有来源的未完话题与她的短期选择。每条包含 topic（稳定的最小主题短语，如“考试”）、
    quote（本轮对应人物原话中的完整连续片段，逐字照抄）、status（open/resolved/suppressed）、
    actor（user=用户，assistant=她）、state（intention=想做，decision=已决定，experience=已经发生）和可选 id。
    actor=user 只能引用用户原话，actor=assistant 只能引用她的回答；用户给她的建议、要求和假设不能充当她自己的决定。

@@ -8,7 +8,7 @@
 *.key
 
 # ===== 运行时数据（用户隐私 + 体积）=====
-# 这些是「用户跟她说的话」——面试演示可以给人看，但绝不该进库。
+# 这些是「用户跟她说的话」——本地演示可以给人看，但绝不该进库。
 memory.db
 memory.db-wal
 memory.db-shm
@@ -64,7 +64,7 @@ docs/修改记录.md
 docs/修改记录-归档.md
 docs/代码整体解读.md
 docs/约束清单.md
-docs/竞争力与简历.md
+docs/_private/
 docs/前端交付说明.md
 docs/superpowers/
 

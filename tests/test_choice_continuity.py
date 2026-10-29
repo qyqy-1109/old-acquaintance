@@ -206,9 +206,9 @@ class ChoiceContinuityTests(unittest.TestCase):
                     [update], now=self.now, **source), [])
 
     def test_legacy_unknown_state_stays_readable_without_rewriting_evidence(self):
-        rows = self.apply(self.update("明天面试，我有点紧张", topic="面试",
+        rows = self.apply(self.update("明天考试，我有点紧张", topic="考试",
                                      actor="user", state="experience"),
-                          user="明天面试，我有点紧张", answer="听着呢")
+                          user="明天考试，我有点紧张", answer="听着呢")
         self.assertEqual(len(rows), 1)
         row = rows[0]
         with self.service.store._lock, self.service.store.db:
@@ -220,10 +220,10 @@ class ChoiceContinuityTests(unittest.TestCase):
         reopened = ChatService()
         self.addCleanup(reopened.close)
         try:
-            rendered = reopened.continuity.render("面试", now=self.now)
+            rendered = reopened.continuity.render("考试", now=self.now)
         except KeyError as error:
             self.fail(f"旧状态不应使有效话题整块丢失：{error}")
-        self.assertIn("明天面试，我有点紧张", rendered)
+        self.assertIn("明天考试，我有点紧张", rendered)
         self.assertEqual(reopened.continuity.get(row["id"])["state"], "pending")
         self.assertEqual(reopened.continuity.history(row["id"])[0]["state"], "pending")
 
