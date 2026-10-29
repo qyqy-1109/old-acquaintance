@@ -351,6 +351,6 @@ _MISSING_KEYS = [
     ) if not value
 ]
 if _MISSING_KEYS:
-    print("[config] ⚠ 缺少必需的密钥，相关功能会失败：\n  - "
+    print("[config] [!] 缺少必需的密钥，相关功能会失败：\n  - "
           + "\n  - ".join(_MISSING_KEYS)
           + "\n  把 .env.example 复制成 .env 并填上即可（密钥不需要写进代码）。")

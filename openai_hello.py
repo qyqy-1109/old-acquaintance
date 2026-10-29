@@ -38,7 +38,7 @@ def interactive(service: ChatService) -> int:
     if greeting:
         print(f"{state['name']}：{greeting}")
     if state.get("memory_issues"):
-        print(f"⚠ 对账发现 {len(state['memory_issues'])} 处矛盾，看详情：/mem check")
+        print(f"[!] 对账发现 {len(state['memory_issues'])} 处矛盾，看详情：/mem check")
     print("命令：/personality /world /user /profile /clear /mem，exit 退出")
     print("      /mem dead 看从没被想起的记忆　/mem check 跨层对账\n")
 
