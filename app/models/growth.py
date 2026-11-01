@@ -132,6 +132,40 @@ class GrowthBook:
         with self._lock:
             return copy.deepcopy(self.data)
 
+    def panel(self, *, candidate_limit: int = 8,
+              narrative_limit: int = 6) -> dict[str, Any]:
+        """给前端状态页用的紧凑视图：候选、最近叙事、上次漂移检查。"""
+        snap = self.snapshot()
+        candidates = sorted(
+            (c for c in snap.get("candidates") or []
+             if c.get("status") == "candidate"),
+            key=lambda c: c.get("last_seen") or 0,
+            reverse=True,
+        )[:max(0, int(candidate_limit))]
+        return {
+            "candidates": [{
+                "field": c.get("field") or "",
+                "text": c.get("text") or "",
+                "confidence": c.get("confidence") or 0,
+                "observations": int(c.get("observations") or 0),
+                "sessions": len({e.get("session") for e in c.get("evidence") or []}),
+                "first_seen": c.get("first_seen") or 0,
+                "last_seen": c.get("last_seen") or 0,
+            } for c in candidates],
+            "candidate_count": sum(1 for c in snap.get("candidates") or []
+                                   if c.get("status") == "candidate"),
+            "active_count": sum(1 for c in snap.get("candidates") or []
+                                if c.get("status") == "active"),
+            "narrative": [{
+                "version": n.get("version") or 0,
+                "text": n.get("text") or "",
+                "at": n.get("at") or 0,
+            } for n in (snap.get("narrative") or [])[-max(0, int(narrative_limit)):]],
+            "drift": (snap.get("drift") or {}).get("last") or None,
+            "stats": snap.get("stats") or {},
+            "generated_at": time.time(),
+        }
+
     # ---------- 候选 ----------
     @staticmethod
     def _clean_evidence(evidence, now: float) -> list[dict[str, Any]]:

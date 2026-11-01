@@ -4317,6 +4317,11 @@ def test_growth_evidence_gate_and_narrative():
            "叙事要进主提示词")
         eq(len(svc.personality.history[-1].get("evidence") or []) >= 2, True,
            "history 要留证据链")
+        growth_state = svc.state()["growth"]
+        eq(growth_state["version"], svc.personality.data["version"],
+           "状态接口要带成长面板版本")
+        eq(len(growth_state["narrative"]) >= 1, True,
+           "状态接口要带成长叙事")
     finally:
         cs_mod.chat_json = real
         _close_growth_svc(svc, saved)

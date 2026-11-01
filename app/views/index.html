@@ -224,6 +224,27 @@
               <section class="min-w-0"><h3 class="mb-4 flex items-center gap-2 font-medium"><i data-icon="contact-round" class="text-brand" aria-hidden="true"></i>她眼中的你</h3><p id="profile-summary" class="whitespace-pre-wrap leading-7 text-muted"></p><details class="detail-block mt-6"><summary>完整画像</summary><pre id="profile-text" class="text-output mt-4"></pre></details></section>
               <section class="min-w-0 border-t border-line pt-8 lg:border-l lg:border-t-0 lg:pl-9 lg:pt-0"><img id="profile-avatar" class="mb-4 size-20 rounded-full border border-line object-cover" src="/static/assets/avatar-placeholder.png" alt="角色头像" width="80" height="80"><h3 class="mb-4 flex items-center gap-2 font-medium"><i data-icon="house" class="text-rose" aria-hidden="true"></i>邻家的她</h3><p id="personality-summary" class="whitespace-pre-wrap leading-7 text-muted"></p><details class="detail-block mt-6"><summary>完整人设</summary><pre id="personality-text" class="text-output mt-4"></pre></details></section>
             </div>
+
+            <section class="growth-panel" aria-labelledby="growth-title">
+              <div class="growth-head">
+                <div>
+                  <p class="growth-kicker">Growth · 证据与变化</p>
+                  <h3 id="growth-title">人格增长</h3>
+                </div>
+                <p id="growth-status" class="growth-status">还在读她的成长记录…</p>
+              </div>
+              <div class="growth-grid">
+                <div>
+                  <h4 class="growth-subtitle">正在攒证据</h4>
+                  <ul id="growth-candidates" class="growth-candidates"></ul>
+                </div>
+                <div>
+                  <h4 class="growth-subtitle">最近的成长</h4>
+                  <ol id="growth-narrative" class="growth-narrative"></ol>
+                </div>
+              </div>
+              <p id="growth-drift" class="growth-drift"></p>
+            </section>
           </section>
           <section id="view-care" class="memory-section" aria-labelledby="care-title" hidden>
             <div class="flex items-start justify-between gap-4"><div><h2 id="care-title" class="section-title">记忆体检</h2><p id="care-summary" class="mt-2 text-sm text-muted"></p></div><button id="memory-check" type="button" class="secondary-button"><i data-icon="heart-pulse" aria-hidden="true"></i>检查</button></div>

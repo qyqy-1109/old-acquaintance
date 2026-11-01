@@ -1794,6 +1794,14 @@ class ChatService:
             "greeting": self._greeting or "",
             "personality": self.personality.summary(),
             "personality_text": self.personality.render(),
+            "growth": (
+                {**getattr(self, "growth").panel(),
+                 "version": self.personality.data.get("version", 1)}
+                if getattr(self, "growth", None) is not None
+                else {"version": self.personality.data.get("version", 1),
+                      "candidates": [], "candidate_count": 0, "active_count": 0,
+                      "narrative": [], "drift": None, "stats": {}}
+            ),
             "profile": self.profile.summary(),
             "profile_text": self.profile.render(),
             "memory": self.store.stats(),

@@ -633,8 +633,8 @@ function resetSession() {
   $("relationship-miss-reason").value = "";
   missPromiseId = "";
   $("life-pin-input").value = "";
-  for (const id of ["slots-output", "timeline-output", "care-output", "profile-summary", "profile-text", "personality-summary", "personality-text", "world-list", "life-events", "life-said", "life-exp", "relationship-stage", "relationship-call", "relationship-detail", "relationship-why", "relationship-promises", "relationship-events", "relationship-miss-promise"]) $(id).replaceChildren();
-  for (const id of ["life-state", "life-script"]) $(id).textContent = "";
+  for (const id of ["slots-output", "timeline-output", "care-output", "profile-summary", "profile-text", "personality-summary", "personality-text", "growth-candidates", "growth-narrative", "world-list", "life-events", "life-said", "life-exp", "relationship-stage", "relationship-call", "relationship-detail", "relationship-why", "relationship-promises", "relationship-events", "relationship-miss-promise"]) $(id).replaceChildren();
+  for (const id of ["life-state", "life-script", "growth-status", "growth-drift"]) $(id).textContent = "";
   // `#119`：换账号必须清掉"见过哪些待发表"——`pending_say.id` 是**每用户各自的自增
   // rowid**，不清的话第二个账号的主动消息会被上一个账号残留的 id 挡掉（`T89`）。
   seenSay.clear();
@@ -1131,6 +1131,88 @@ async function claimLegacy() {
   }
 }
 
+const GROWTH_LABELS = {
+  identity: "身份", tone: "语气", traits: "性格", values: "价值观",
+  behavior: "行为", speech_habits: "说话习惯", greeting: "开场白",
+};
+
+function growthDate(value) {
+  const stamp = Number(value);
+  if (!Number.isFinite(stamp) || stamp <= 0) return "时间未知";
+  const date = new Date(stamp * 1000);
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function renderGrowth(data = {}) {
+  const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+  const narrative = Array.isArray(data.narrative) ? data.narrative : [];
+  const version = Number(data.version || 1) || 1;
+  const candidateCount = Number(data.candidate_count || candidates.length) || 0;
+  const activeCount = Number(data.active_count || 0) || 0;
+  const summary = [`v${version}`];
+  if (candidateCount) summary.push(`${candidateCount} 条候选`);
+  if (activeCount) summary.push(`${activeCount} 条已转正`);
+  summary.push(narrative.length ? `最近 ${narrative.length} 条成长` : "还没有成长记录");
+  $("growth-status").textContent = summary.join(" · ");
+
+  const candidateList = $("growth-candidates");
+  candidateList.replaceChildren();
+  if (!candidates.length) {
+    candidateList.append(element("li", "growth-empty",
+      "还没有候选改动。单次情绪和一次对话只会留在这里等证据，不会直接改人设。"));
+  } else {
+    for (const candidate of candidates) {
+      const item = element("li", "growth-candidate");
+      const top = element("div", "growth-candidate-top");
+      top.append(
+        element("p", "growth-candidate-text", displayMemoryText(candidate.text || "未命名候选")),
+        element("span", "growth-field", GROWTH_LABELS[candidate.field] || candidate.field || "特质"),
+      );
+      const confidence = Number(candidate.confidence || 0);
+      const meta = element("p", "growth-candidate-meta",
+        `证据 ${Number(candidate.observations || 0)} 条 / ${Number(candidate.sessions || 0)} 个会话`
+        + ` · 置信度 ${confidence.toFixed(2)} · 始于 ${growthDate(candidate.first_seen)}`);
+      item.append(top, meta);
+      candidateList.append(item);
+    }
+  }
+
+  const narrativeList = $("growth-narrative");
+  narrativeList.replaceChildren();
+  if (!narrative.length) {
+    narrativeList.append(element("li", "growth-empty",
+      "还没有成长记录。人格版本或关系阶段变化后，这里会出现一条可追溯的叙事。"));
+  } else {
+    for (const entry of narrative) {
+      const item = element("li");
+      item.append(
+        element("p", "growth-version",
+          `第 ${Number(entry.version || 0) || "?"} 版 · ${growthDate(entry.at)}`),
+        element("p", "", displayMemoryText(entry.text || "")),
+      );
+      narrativeList.append(item);
+    }
+  }
+
+  const driftNode = $("growth-drift");
+  driftNode.classList.remove("blocked");
+  const drift = data.drift && typeof data.drift === "object" ? data.drift : null;
+  if (!drift) {
+    driftNode.textContent = "还没有做过漂移检查。第一次人设改动后会在这里留下相似度与拦截记录。";
+    return;
+  }
+  const ok = drift.ok !== false;
+  const similarity = Number(drift.similarity);
+  const added = Number(drift.added_items || 0) || 0;
+  let driftText = `上次漂移检查：${ok ? "通过" : "拦下"}`
+    + ` · 相似度 ${Number.isFinite(similarity) ? similarity.toFixed(2) : "—"}`
+    + ` · 新增 ${added} 条`;
+  const issues = Array.isArray(drift.issues) ? drift.issues.filter(Boolean) : [];
+  if (!ok && issues.length) driftText += `\n${issues.join("\n")}`;
+  driftNode.textContent = driftText;
+  if (!ok) driftNode.classList.add("blocked");
+}
+
 function renderState(data) {
   state = data;
   const herName = String(data.name || "头像");
@@ -1144,6 +1226,7 @@ function renderState(data) {
   $("profile-text").textContent = displayMemoryText(data.profile_text || "还没有记录。");
   $("personality-summary").textContent = displayMemoryText(data.personality || "还没有记录。");
   $("personality-text").textContent = displayMemoryText(data.personality_text || "还没有记录。");
+  renderGrowth(data.growth || {});
   const issues = Array.isArray(data.memory_issues) ? data.memory_issues : [];
   const memoryCheckError = String(data.memory_check_error || "").trim();
   $("issue-badge").hidden = !issues.length && !memoryCheckError;
@@ -1202,6 +1285,7 @@ function navigate(view) {
   $("memory-view").hidden = view === "chat";
   for (const section of document.querySelectorAll(".memory-section")) section.hidden = section.id !== "view-" + view;
   setError("memory-error");
+  if (view === "profile") refreshState().catch(error => { if (!isQuiet(error)) toast(error.message); });
   if (view === "slots") loadCommandView("/slots", "slots-output");
   if (view === "timeline") loadCommandView("/timeline", "timeline-output");
   if (view === "life") loadLifeBoard();
