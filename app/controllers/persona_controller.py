@@ -99,6 +99,7 @@ def import_card(body: CardIn, request: Request) -> dict:
             parsed["personality"], reason=f"导入人格卡片：{body.filename}")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    service.on_persona_replaced()
 
     world_note = ""
     if body.include_world and parsed.get("world"):

@@ -360,6 +360,17 @@ PROACTIVE_MOTIVE_TTL_DAYS = float(os.environ.get("WB_PROACTIVE_MOTIVE_TTL_DAYS")
 # 退出时再兜底收个尾。改动小、可归因、可回滚（history 留 20 版）。
 EVOLVE_EVERY = int(os.environ.get("WB_EVOLVE_EVERY") or 20)
 
+# ===== 人格成长层（证据 / 候选 / 漂移）=====
+# 单次情绪或一次对话不再直接改人设：新增特质先进候选，攒够独立证据才转正。
+# identity / values 更严（3 条证据 + 跨会话），因为改错代价最大。
+GROWTH_MIN_CONFIDENCE = float(os.environ.get("WB_GROWTH_MIN_CONFIDENCE") or 0.55)
+GROWTH_MAX_NEW_ITEMS = int(os.environ.get("WB_GROWTH_MAX_NEW_ITEMS") or 3)
+GROWTH_MIN_SIMILARITY = float(os.environ.get("WB_GROWTH_MIN_SIMILARITY") or 0.55)
+GROWTH_MIN_BASELINE_SIMILARITY = float(
+    os.environ.get("WB_GROWTH_MIN_BASELINE_SIMILARITY") or 0.35)
+# 把最近 1–2 条成长叙事注入主提示词。关掉后只记录、不主动影响语气。
+GROWTH_NARRATIVE = os.environ.get("WB_GROWTH_NARRATIVE", "1") not in ("0", "false", "False")
+
 # ===== 启动自检：必需密钥缺了就说清楚 =====
 # 密钥的默认值已经删掉（`#064`），所以"忘了配 .env"会一路表现为 401 或调用失败。
 # 与其等第一次调用才炸，不如启动时就把缺哪个讲明白——**失败要可见**。

@@ -20,10 +20,6 @@ from __future__ import annotations
 import json
 import os
 
-from app.log import get
-
-log = get("jsonfile")
-
 
 def write_json_atomic(path: str, data, *, indent: int = 2) -> None:
     """把 data 原子地写成 JSON。
@@ -56,5 +52,8 @@ def read_json(path: str, default=None):
     except FileNotFoundError:
         return default
     except Exception as exc:
-        log.error("读取失败（用默认值）：%s: %s", type(exc).__name__, exc)
+        # 延迟导入：本模块被 config/settings_store 在启动期导入，
+        # 顶层拉 app.log 会形成 log → config → settings_store → jsonfile → log 的循环。
+        from app.log import get
+        get("jsonfile").error("读取失败（用默认值）：%s: %s", type(exc).__name__, exc)
         return default

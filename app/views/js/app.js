@@ -1662,7 +1662,8 @@ const commands = [["查看记忆", "/mem"], ["记忆体检", "/mem check"], ["�
   ["已退场记忆", "/mem dead"], ["删除一条记忆", "/mem del "], ["世界书", "/world"],
   ["删除一条设定", "/world del "], ["整理世界书", "/world tidy"], ["时间轴", "/timeline"],
   ["状态槽位", "/slots"], ["用户信息", "/user"], ["用户画像", "/profile"],
-  ["查看人设", "/personality"], ["演化人设", "/personality evolve"], ["重置人设", "/personality reset"],
+  ["查看人设", "/personality"], ["人格成长", "/growth"], ["演化人设", "/personality evolve"],
+  ["重置人设", "/personality reset"],
   ["她说错了的修正", "/fix"], ["你现在在哪座城市", "/city"],
   ["清空当前对话", "/clear"], ["清除长期记忆", "/forget"]];
 for (const [label, command] of commands) {

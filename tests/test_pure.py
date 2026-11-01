@@ -2044,6 +2044,10 @@ def main() -> int:
                test_strip_conflicting_persona_scalar_items,
                test_personality_conflict_context_includes_fixed_base,
                test_personality_pending_review,
+               test_growth_evidence_gate_and_narrative,
+               test_growth_identity_requires_two_sessions,
+               test_growth_drift_guard_blocks_core_rewrite,
+               test_growth_candidates_persist_across_restart,
                test_atomic_json_write_survives_failure,
                test_multi_user_data_isolation,
                test_auth_token_issue_and_resolve,
@@ -4226,6 +4230,211 @@ def test_places_skip_non_leisure_categories():
     eq("布澜路联创社区公园" in names, True, f"公园要留：{names}")
     eq(any("有限公司" in n for n in names), False, f"公司不该出现：{names}")
     eq(any("培训" in n for n in names), False, f"培训机构不该出现：{names}")
+
+
+def _new_growth_svc():
+    """给成长层用例起一个隔离的 ChatService（不联网）。"""
+    import tempfile
+
+    from app.services.chat_service import ChatService
+
+    saved = {k: getattr(config, k) for k in ("DATA_DIR", "API_KEY", "CHAT_API_KEY",
+                                             "EMBED_API_KEY", "AMAP_KEY", "AMAP_CITY",
+                                             "AUTO_EVOLVE_PERSONALITY")
+             if hasattr(config, k)}
+    config.DATA_DIR = tempfile.mkdtemp()
+    config.API_KEY = config.CHAT_API_KEY = config.EMBED_API_KEY = "test-key"
+    config.AMAP_KEY = config.AMAP_CITY = ""
+    config.AUTO_EVOLVE_PERSONALITY = True
+    return ChatService(), saved
+
+
+def _close_growth_svc(svc, saved):
+    if svc is not None:
+        try:
+            svc.close()
+        except Exception:
+            pass
+    for key, value in saved.items():
+        setattr(config, key, value)
+
+
+def test_growth_evidence_gate_and_narrative():
+    """单条证据只进候选；第二条独立证据才转正，并写一条成长叙事。"""
+    import time
+
+    from app.services import chat_service as cs_mod
+
+    svc, saved = _new_growth_svc()
+    real = cs_mod.chat_json
+    try:
+        old = list(svc.personality.data["traits"])
+        trait = "更愿意主动分享自己的事"
+        turns1 = [
+            {"role": "user", "content": "我最近总想跟你多说点自己的事", "ts": time.time()},
+            {"role": "assistant", "content": "好呀，我听着", "ts": time.time()},
+        ]
+        svc.store.sessions["default"] = turns1
+        cs_mod.chat_json = lambda *a, **k: ({
+            "changes": {"traits": old + [trait]},
+            "evidence": {"traits": ["我最近总想跟你多说点自己的事"]},
+            "confidence": {"traits": 0.9},
+        }, None)
+
+        ok, note = svc.evolve_personality(turns1)
+        eq(ok, True, f"演化本身要成功：{note}")
+        eq(trait in svc.personality.data["traits"], False,
+           "单条证据不能直接改人设")
+        candidates = [c for c in svc.growth.snapshot()["candidates"]
+                      if c.get("text") == trait]
+        eq(len(candidates), 1, f"要留下候选：{candidates}")
+        eq(candidates[0]["status"], "candidate", "先停在候选")
+        eq(candidates[0]["observations"], 1, "只算一条证据")
+        eq("攒证据" in note, True, f"要告诉人它在等证据：{note}")
+
+        turns2 = turns1 + [
+            {"role": "user", "content": "你别老问，我自己会说", "ts": time.time()},
+            {"role": "assistant", "content": "行，那我不催", "ts": time.time()},
+        ]
+        svc.store.sessions["default"] = turns2
+        cs_mod.chat_json = lambda *a, **k: ({
+            "changes": {"traits": old + [trait]},
+            "evidence": {"traits": ["我最近总想跟你多说点自己的事",
+                                   "你别老问，我自己会说"]},
+            "confidence": {"traits": 0.9},
+        }, None)
+
+        ok, note = svc.evolve_personality(turns2)
+        eq(ok, True, f"第二次演化要成功：{note}")
+        eq(trait in svc.personality.data["traits"], True,
+           "第二条独立证据后才转正")
+        candidate = next(c for c in svc.growth.snapshot()["candidates"]
+                         if c.get("text") == trait)
+        eq(candidate["status"], "active", "转正后标 active")
+        eq(len(svc.growth.snapshot()["narrative"]) >= 1, True,
+           "要写一条成长叙事")
+        eq("【我的成长】" in svc.system_prompt(), True,
+           "叙事要进主提示词")
+        eq(len(svc.personality.history[-1].get("evidence") or []) >= 2, True,
+           "history 要留证据链")
+    finally:
+        cs_mod.chat_json = real
+        _close_growth_svc(svc, saved)
+
+
+def test_growth_identity_requires_two_sessions():
+    """identity/values 是高风险字段：同一会话里证据再多也不转正。"""
+    import time
+
+    from app.services import chat_service as cs_mod
+
+    svc, saved = _new_growth_svc()
+    real = cs_mod.chat_json
+    try:
+        identity = "住在学校旁边的大二女生，喜欢和隔壁的人聊天"
+        quotes = ["我就是个普通大学生", "我住学校旁边", "我平时就在这一带活动"]
+        turns1 = [{"role": "user", "content": q, "ts": time.time()} for q in quotes]
+        svc.store.sessions["default"] = turns1
+        cs_mod.chat_json = lambda *a, **k: ({
+            "changes": {"identity": identity},
+            "evidence": {"identity": quotes},
+            "confidence": {"identity": 0.95},
+        }, None)
+
+        ok, note = svc.evolve_personality(turns1)
+        eq(ok, True, f"第一次要成功：{note}")
+        eq(svc.personality.data.get("identity") == identity, False,
+           "同一会话里的三条证据不能改 identity")
+        candidate = next(c for c in svc.growth.snapshot()["candidates"]
+                         if c.get("field") == "identity")
+        eq(candidate["status"], "candidate", "先停在候选")
+        eq(candidate["observations"], 3, "证据数按三条记")
+
+        svc.store.session = "chat-2"
+        turns2 = [{"role": "user", "content": "我确实住学校旁边", "ts": time.time()}]
+        svc.store.sessions["chat-2"] = turns2
+        cs_mod.chat_json = lambda *a, **k: ({
+            "changes": {"identity": identity},
+            "evidence": {"identity": ["我确实住学校旁边"]},
+            "confidence": {"identity": 0.95},
+        }, None)
+
+        ok, note = svc.evolve_personality(turns2)
+        eq(ok, True, f"第二次要成功：{note}")
+        eq(svc.personality.data.get("identity"), identity,
+           "跨会话证据够了才改 identity")
+    finally:
+        cs_mod.chat_json = real
+        _close_growth_svc(svc, saved)
+
+
+def test_growth_drift_guard_blocks_core_rewrite():
+    """漂移护栏：底座改动、一次大改、相似度骤降都要拦下。"""
+    import copy
+    import tempfile
+
+    from app.models.growth import GrowthBook
+    from app.models.personality import DEFAULT_PERSONALITY
+
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        book = GrowthBook(path=os.path.join(d, "growth.json"))
+        before = copy.deepcopy(DEFAULT_PERSONALITY)
+
+        rewritten = copy.deepcopy(before)
+        rewritten["traits"] = ["完全不同的一个人"]
+        rewritten["values"] = ["只看利益"]
+        rewritten["behavior"] = ["不回答任何问题"]
+        ok, issues, metrics = book.check_drift(
+            before, rewritten, max_new_items=3, min_similarity=0.9)
+        eq(ok, False, "大改必须拦下")
+        eq(any("相似度" in issue for issue in issues), True,
+           f"要给出相似度原因：{issues}")
+        eq(metrics["ok"], False, "指标里也要标失败")
+
+        broken_base = copy.deepcopy(before)
+        broken_base["origin"] = "北京"
+        ok2, issues2, _ = book.check_drift(
+            before, broken_base, max_new_items=3, min_similarity=0.0)
+        eq(ok2, False, "底座改动必须拦下")
+        eq(any("origin" in issue for issue in issues2), True,
+           f"要点名是 origin：{issues2}")
+
+
+def test_growth_candidates_persist_across_restart():
+    """候选不是内存态：重启后还能继续攒证据。"""
+    import tempfile
+    import time
+
+    from app.models.growth import GrowthBook
+
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        path = os.path.join(d, "growth.json")
+        now = time.time()
+        first = GrowthBook(path=path)
+        first.observe("traits", "更愿意主动分享",
+                      [{"session": "s1", "seq": 1, "at": now, "quote": "我想多说点"}],
+                      0.8, now=now)
+        again = GrowthBook(path=path)
+        candidates = [c for c in again.snapshot()["candidates"]
+                      if c.get("text") == "更愿意主动分享"]
+        eq(len(candidates), 1, "重启后候选还在")
+        eq(candidates[0]["observations"], 1, "证据数也在")
+        eq(again.eligible(candidates[0]), False, "一条证据还不够格")
+        again.observe("traits", "更愿意主动分享",
+                      [{"session": "s2", "seq": 1, "at": now + 60, "quote": "我自己会说"}],
+                      0.8, now=now + 60)
+        candidate = next(c for c in again.snapshot()["candidates"]
+                         if c.get("text") == "更愿意主动分享")
+        eq(candidate["observations"], 2, "第二条证据累加上了")
+        eq(again.eligible(candidate), True, "两条独立证据后够格")
+
+        from types import SimpleNamespace
+        from app.models.personality import DEFAULT_PERSONALITY
+        again.reset_for(SimpleNamespace(data=json.loads(json.dumps(DEFAULT_PERSONALITY))))
+        snap = again.snapshot()
+        eq(snap["candidates"], [], "换人设后旧候选清空")
+        eq((snap.get("drift") or {}).get("baseline") is not None, True,
+           "换人设后要重建基线")
 
 
 def test_growing_base_fields_append_only_and_pin():

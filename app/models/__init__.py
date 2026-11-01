@@ -8,9 +8,10 @@
 这一层不知道自己被谁调用：Web、CLI、脚本都可以，它只管读写正确。
 """
 
+from app.models.growth import GrowthBook
 from app.models.memory import MemoryStore
 from app.models.personality import Personality
 from app.models.user import UserProfile
 from app.models.world import WorldBook
 
-__all__ = ["MemoryStore", "Personality", "UserProfile", "WorldBook"]
+__all__ = ["GrowthBook", "MemoryStore", "Personality", "UserProfile", "WorldBook"]

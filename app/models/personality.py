@@ -12,11 +12,14 @@
 迭代方式：
     1. 手动：/personality <描述>  直接补充性格特质
     2. 自动：会话结束时让模型根据本次对话提出调整，自动应用
-每次迭代都会把旧版本存进 history，可以 /personality reset 回滚上一版。
+每次迭代都会把旧版本存进 history，并附上这次改动的证据（会话/序号/用户原话）；
+可以 /personality reset 回滚上一版。新增条目先经过 GrowthBook 的候选池，
+不在这里直接落地。
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import random
@@ -386,9 +389,9 @@ class Personality:
                 out.append(text)
         return out
 
-    def _merge_growing(self, key: str, incoming: list) -> list:
+    def _merge_growing(self, key: str, incoming: list, current: list | None = None) -> list:
         """可长字段的合并：**已有的一个都不丢**（钉住），新来的去重后追加。"""
-        current = self.data.get(key) or []
+        current = (self.data.get(key) if current is None else current) or []
         pinned_texts = [x["text"] for x in current
                         if isinstance(x, dict) and x.get("_pinned")]
         merged = list(current)
@@ -464,35 +467,72 @@ class Personality:
         """至少得有一个中文字符。防的是迭代几次之后人设被悄悄换成英文。"""
         return any("\u4e00" <= ch <= "\u9fff" for ch in text)
 
-    def evolve(self, patch: dict, reason: str = "") -> str:
-        """用 patch 更新性格模板，旧版本进 history。返回变更说明。"""
+    def _apply_patch_to(self, data: dict, patch: dict) -> list[str]:
+        """把已经过 `_sanitize` 的 patch 应用到 data，返回变更说明。
+
+        抽出来是为了 `preview()`：漂移护栏必须在**写盘之前**看到改动后的完整人设，
+        否则只能先改再回滚，history 里会留下一条实际上没生效的版本。
+        """
+        changes: list[str] = []
+        for key, value in patch.items():
+            if key in ("version", "updated_at") or value is None:
+                continue
+            # 可长字段走**合并**而不是替换：这是方案 2 的实现要点。
+            # 靠代码保证"只增不改"，不指望模型自觉（它经常只回一条新的）。
+            merged = (self._merge_growing(key, value, data.get(key))
+                      if key in self.GROWING_FIELDS else value)
+            old = data.get(key)
+            if old == merged:
+                continue
+            changes.append(f"{key}: {self._fmt(old)} → {self._fmt(merged)}")
+            data[key] = merged
+        return changes
+
+    def preview(self, patch: dict) -> tuple[dict, list[str], list[str]]:
+        """不写盘地预演一次演化，返回 (改后数据, 被拦字段, 变更说明)。
+
+        漂移护栏用它检查"这次改完会变成谁"，通过后再调用 `evolve()`。
+        """
+        patch, dropped = self._sanitize(patch)
+        data = copy.deepcopy(self.data)
+        changes = self._apply_patch_to(data, patch)
+        if changes:
+            data["version"] = int(data.get("version", 1)) + 1
+            data["updated_at"] = time.time()
+        return data, dropped, changes
+
+    def evolve(self, patch: dict, reason: str = "", *,
+               evidence: list[dict] | None = None, source: str = "auto") -> str:
+        """用 patch 更新性格模板，旧版本进 history。返回变更说明。
+
+        `evidence` 是这次改动背后的消息引用（会话、序号、原话）；history 里留着，
+        让人能回答"她为什么变成这样"，而不是只看到一个版本号。
+        """
         if not patch:
             return ""
         patch, dropped = self._sanitize(patch)
         if not patch:
             note = "、".join(dropped) if dropped else "没有可用的改动"
             return f"本次迭代被拦下：{note}"
-        snapshot = dict(self.data)  # 必须是改动前的快照，否则回滚没有意义
-        changes = []
-        for key, value in patch.items():
-            if key in ("version", "updated_at") or value is None:
-                continue
-            # 可长字段走**合并**而不是替换：这是方案 2 的实现要点。
-            # 靠代码保证"只增不改"，不指望模型自觉（它经常只回一条新的）。
-            merged = self._merge_growing(key, value) if key in self.GROWING_FIELDS else value
-            old = self.data.get(key)
-            if old == merged:
-                continue
-            changes.append(f"{key}: {self._fmt(old)} → {self._fmt(merged)}")
-            self.data[key] = merged
+        snapshot = copy.deepcopy(self.data)  # 必须是改动前的深快照，否则回滚会丢嵌套字段
+        data = copy.deepcopy(self.data)
+        changes = self._apply_patch_to(data, patch)
 
         if not changes:
             return ""
 
-        self.history.append({"data": snapshot, "reason": reason, "ts": time.time()})
+        self.history.append({
+            "data": snapshot,
+            "reason": reason,
+            "ts": time.time(),
+            "evidence": list(evidence or []),
+            "changes": list(changes),
+            "source": source,
+        })
         self.history = self.history[-20:]  # 只留最近 20 版
-        self.data["version"] = int(self.data.get("version", 1)) + 1
-        self.data["updated_at"] = time.time()
+        data["version"] = int(data.get("version", 1)) + 1
+        data["updated_at"] = time.time()
+        self.data = data
         self._save()
         if dropped:
             changes.append(f"另外拦下：{'、'.join(dropped)}")
@@ -508,7 +548,7 @@ class Personality:
     def manual(self, text: str) -> str:
         traits = list(self.data.get("traits", []))
         traits.append(text)
-        return self.evolve({"traits": traits}, reason="手动修改")
+        return self.evolve({"traits": traits}, reason="手动修改", source="manual")
 
     # ---------- 导入 / 导出（人格卡片） ----------
     IMPORT_MAX_ITEMS = 12
@@ -649,10 +689,11 @@ class Personality:
             return []
         return data if isinstance(data, list) else []
 
-    def record_pending(self, patch: dict, blocked: list[str], why: str = "") -> None:
+    def record_pending(self, patch: dict, blocked: list[str], why: str = "",
+                       evidence: list[dict] | None = None) -> None:
         items = self.pending_list()
         items.append({"patch": patch, "blocked": blocked, "why": why,
-                      "at": time.time()})
+                      "evidence": list(evidence or []), "at": time.time()})
         self._write_pending(items)
 
     def resolve_pending(self, index: int, accept: bool) -> str:
@@ -668,7 +709,8 @@ class Personality:
         self._write_pending(items)
         if not accept:
             return f"已丢弃第 {index + 1} 条待确认的改动"
-        msg = self.evolve(item.get("patch") or {}, reason="人工采纳待确认的改动")
+        msg = self.evolve(item.get("patch") or {}, reason="人工采纳待确认的改动",
+                          evidence=item.get("evidence") or [], source="manual")
         return f"已采纳第 {index + 1} 条（绕过一致性检查）：{msg}"
 
     def _write_pending(self, items: list[dict]) -> None:

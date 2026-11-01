@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import json
 import os
+import re
 import threading
 import time
 from typing import Iterator
@@ -12,7 +14,8 @@ from typing import Iterator
 from openai import OpenAI
 
 from app import config
-from app.models import MemoryStore, Personality, UserProfile, WorldBook
+from app.models import GrowthBook, MemoryStore, Personality, UserProfile, WorldBook
+from app.models.growth import LIST_FIELDS, SCALAR_FIELDS, texts_of
 from app.models.memory import KIND_CONSTRAINT, KIND_WORLD
 from app.models.memory_opinions import promotion_patch
 from app.models.relationship import Relationship
@@ -121,15 +124,29 @@ PERSONALITY_EVOLVE_PROMPT = """你是 AI 助手的性格模板设计师。
 不想挪、或者还不到时候，就**别写这个字段**（宁缺毋滥）。规矩：一次只挪一档；
 没到资格线或刚改口不久，程序会拦下并写明原因，那是正常的。
 
-输出需要调整的维度。只输出 JSON，没有需要改的就输出 {{}}。
-可选字段：name(字符串)、identity(字符串)、traits(字符串数组)、tone(字符串)、
-values(字符串数组)、behavior(字符串数组)、speech_habits(字符串数组)、
-cares(字符串数组)、favorite_places(字符串数组)。
+【输出格式】
+只输出 JSON，没有需要改的就输出 {{}}：
+{{
+  "changes": {{"traits": ["改动后的完整列表"], "behavior": ["…"]}},
+  "evidence": {{"traits": ["用户原话 1", "用户原话 2"], "behavior": ["…"]}},
+  "confidence": {{"traits": 0.8, "behavior": 0.6}}
+}}
+
+可选字段：identity(字符串)、tone(字符串)、traits(数组)、values(数组)、
+behavior(数组)、speech_habits(数组)、greeting(数组)、cares(数组)、favorite_places(数组)。
 含义：traits=性格特质，tone=语气风格，values=价值观，behavior=行为偏好，
-speech_habits=说话习惯，cares=她在意的人与事，favorite_places=她爱去的地方。
-数组维度要输出【改动后的完整列表】，把保留下来的条目也一起列上——
-因为这里是整体替换，漏掉哪条就等于删掉哪条。内容必须用中文写。
-不要为了改而改，只在确有明显依据时才改。
+speech_habits=说话习惯，greeting=开场白，cares=她在意的人与事，
+favorite_places=她爱去的地方。
+
+【证据规则——这一条决定改动会不会生效】
+- `evidence` 必须逐字引用【本次对话】里**用户**说过的话，不要改写、不要编造。
+- 每个字段至少两条独立证据；只有一条的，程序会记为候选、暂缓生效。
+- identity / values 更严格：至少三条证据，而且必须来自不同会话。
+- 单次情绪、玩笑、反话、角色扮演，不能作为改 traits / values 的依据。
+  这类最多只算一条证据，等它在以后反复出现再转正。
+- 数组字段输出【改动后的完整列表】，但程序只自动应用**新增**条目；
+  删除或改写已有条目会进「待确认」，由人拍板。
+- 不要为了改而改。没有明确、可引用的依据，就输出 {{}}。
 
 【cares / favorite_places 单独一条规矩】
 这两个是她**自己的**在意与去处，只在她本人明确说过、或这段对话里明确表现出新倾向时
@@ -195,8 +212,8 @@ def strip_conflicting_items(patch: dict, conflicts: list[dict]) -> tuple[dict, l
     return clean, removed
 
 
-COMMANDS = ("/personality", "/world", "/user", "/profile", "/clear", "/mem", "/forget",
-            "/timeline", "/slots", "/fix", "/city", "/relationship")
+COMMANDS = ("/personality", "/growth", "/成长", "/world", "/user", "/profile", "/clear",
+            "/mem", "/forget", "/timeline", "/slots", "/fix", "/city", "/relationship")
 
 
 class ChatService:
@@ -230,6 +247,9 @@ class ChatService:
             return os.path.join(self.data_dir, name)
 
         self.personality = Personality(path=_p("personality.json"))
+        # 成长层：证据、候选特质、叙事和漂移护栏。和人设分文件存——
+        # 候选/叙事不是「她现在是谁」，混进 personality.json 会污染提示词。
+        self.growth = GrowthBook(path=_p("growth.json"))
         self.profile = UserProfile(self.client, path=_p("user_profile.json"),
                                    model=config.PROFILE_MODEL)
         if config.EMBED_API_KEY == config.API_KEY and config.EMBED_BASE_URL == config.BASE_URL:
@@ -452,6 +472,11 @@ class ChatService:
             lines = self.store.render_slots(slots)
             prompt += f"【最近确认的状态】相关实体的记录与确认时间：\n{lines}\n\n"
         prompt += self.personality.render()
+        growth = getattr(self, "growth", None)
+        if config.GROWTH_NARRATIVE and growth is not None:
+            growth_line = growth.render_prompt()
+            if growth_line:
+                prompt += "\n\n" + growth_line
         if agency.asks_for_her_choice(question):
             hint = agency.preference_hint(
                 question, self.personality.data.get("favorite_places") or [],
@@ -1422,9 +1447,13 @@ class ChatService:
             return self.store.render_slots(display_rows)
         if head == "/profile":
             return self.profile.analyze(self.store.sessions.get(self.store.session, []))
+        if head in ("/growth", "/成长"):
+            return self.growth_report()
         if head == "/personality":
             if arg == "reset":
-                return self.personality.rollback()
+                message = self.personality.rollback()
+                self.on_persona_replaced()
+                return message
             if arg in ("pending", "待确认"):
                 items = self.personality.pending_list()
                 if not items:
@@ -1440,13 +1469,31 @@ class ChatService:
                 verb, _, num = arg.partition(" ")
                 if not num.strip().isdigit():
                     return "用法：/personality accept 序号　/personality drop 序号"
-                return self.personality.resolve_pending(int(num.strip()) - 1,
-                                                        accept=verb == "accept")
+                message = self.personality.resolve_pending(int(num.strip()) - 1,
+                                                           accept=verb == "accept")
+                growth = getattr(self, "growth", None)
+                if verb == "accept" and growth is not None:
+                    growth.reconcile(self.personality)
+                    growth.add_narrative(
+                        int(self.personality.data.get("version") or 0),
+                        ["人工采纳了一条待确认改动"],
+                        stage=self.relationship.stage(
+                            time.time(), self._user_msg_count()).get("key", ""))
+                return message
             if arg in ("evolve", "迭代"):
                 ok, msg = self.evolve_personality()
                 return msg or ("这次没有需要改的地方" if ok else "迭代失败")
             if arg:
-                return self.personality.manual(arg)
+                message = self.personality.manual(arg)
+                growth = getattr(self, "growth", None)
+                if growth is not None:
+                    growth.reconcile(self.personality)
+                    growth.add_narrative(
+                        int(self.personality.data.get("version") or 0),
+                        [f"人工补充「{str(arg)[:40]}」"],
+                        stage=self.relationship.stage(
+                            time.time(), self._user_msg_count()).get("key", ""))
+                return message
             return self.personality.render()
         if head == "/relationship":
             # `#146` 关系层：看/调称呼与阶段、记承诺。慢变层，手写为主，所以命令要能改。
@@ -1854,18 +1901,224 @@ class ChatService:
         conflicts = data.get("conflicts") or []
         return [c for c in conflicts if isinstance(c, dict) and c.get("item")]
 
-    def evolve_personality(self, turns: list[dict] | None = None) -> tuple[bool, str]:
-        """让模型根据对话反馈微调性格模板。turns 不传就复盘全部历史。
+    def _evolution_evidence(self, turns: list[dict]) -> list[dict]:
+        """把这一批对话里的**用户原话**变成证据引用（会话 + 序号 + 时间 + 原话）。"""
+        session = self.store.session
+        history = self.store.sessions.get(session, []) or []
+        offset = max(0, len(history) - len(turns or []))
+        out: list[dict] = []
+        for index, msg in enumerate(turns or []):
+            if str(msg.get("role") or "") != "user":
+                continue
+            quote = " ".join(str(msg.get("content") or "").split())
+            if not quote:
+                continue
+            seq = msg.get("seq")
+            if seq is None:
+                seq = offset + index
+            try:
+                seq = int(seq)
+            except (TypeError, ValueError):
+                seq = -1
+            try:
+                at = float(msg.get("ts") or time.time())
+            except (TypeError, ValueError):
+                at = time.time()
+            out.append({"session": session, "seq": seq, "at": at,
+                        "role": "user", "quote": quote[:200]})
+        return out[-12:]
 
-        返回 (是否成功, 说明)。失败和「无需改动」必须分开——踩过：
-        失败信息被当成改动说明打印，前缀还是「已微调」，实际什么都没改。
+    @staticmethod
+    def _split_evolution_payload(data: dict) -> tuple[dict, dict, dict, object, bool]:
+        """兼容两种输出：新的 `{changes, evidence, confidence}` 和旧的扁平 patch。"""
+        payload = dict(data or {})
+        relationship = payload.pop("relationship", None)
+        evidence = payload.pop("evidence", {})
+        confidence = payload.pop("confidence", {})
+        changes = payload.pop("changes", None)
+        structured = isinstance(changes, dict)
+        patch = dict(changes) if structured else payload
+        return (patch,
+                evidence if isinstance(evidence, dict) else {},
+                confidence if isinstance(confidence, dict) else {},
+                relationship,
+                structured)
+
+    @staticmethod
+    def _norm_quote(text: str) -> str:
+        return re.sub(r"[\s，。！？、,.!?；;：:\"'“”‘’（）()【】\[\]]+", "", str(text or ""))
+
+    @classmethod
+    def _field_evidence(cls, raw, pool: list[dict]) -> list[dict]:
+        """模型引用的原话要能在真实用户发言里找到；找不到就不算证据。"""
+        if not raw:
+            return list(pool)
+        items = raw if isinstance(raw, list) else [raw]
+        out: list[dict] = []
+        seen: set[tuple[str, int, str]] = set()
+        for item in items:
+            quote = item.get("quote") if isinstance(item, dict) else item
+            quote = " ".join(str(quote or "").split())
+            if not quote:
+                continue
+            needle = cls._norm_quote(quote)
+            if len(needle) < 3:
+                continue
+            match = next((ev for ev in pool
+                          if needle in cls._norm_quote(ev["quote"])
+                          or cls._norm_quote(ev["quote"]) in needle), None)
+            if match is None:
+                continue
+            key = (match["session"], match["seq"], match["quote"])
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(match)
+            if len(out) >= 8:
+                break
+        return out
+
+    @staticmethod
+    def _field_confidence(raw: dict, field: str) -> float:
+        value = raw.get(field, 0.6) if isinstance(raw, dict) else 0.6
+        try:
+            return max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            return 0.6
+
+    def _gate_evolution_patch(self, patch: dict, evidence_by_field: dict,
+                              confidence_by_field: dict, pool: list[dict],
+                              *, structured: bool = False
+                              ) -> tuple[set[str], dict]:
+        """把新增条目送进候选；返回 (本次观察到的候选 id, 需要人审的删除/改写补丁)。
+
+        这里刻意**不直接应用新增**：先攒证据，再由 `GrowthBook.ready_patch()`
+        决定哪些够格。删除或改写已有条目也不再自动落地，全部进「待确认」。
+        """
+        touched: set[str] = set()
+        pending_removals: dict = {}
+        for field, value in patch.items():
+            if field in Personality.GROWING_FIELDS:
+                continue
+            if field in LIST_FIELDS:
+                old = texts_of(self.personality.data.get(field))
+                new = texts_of(value)
+                added = [item for item in new if item not in old]
+                removed = [item for item in old if item not in new]
+                evidence = evidence_by_field.get(field) or pool
+                confidence = self._field_confidence(confidence_by_field, field)
+                for text in added:
+                    candidate = self.growth.observe(
+                        field, text, evidence, confidence, source="auto")
+                    if candidate:
+                        touched.add(candidate["id"])
+                # 旧式扁平 patch 只列了「改动后的列表」，常见是模型漏写保留项；
+                # 这种不当作删除处理。新式 changes 输出视为完整列表，删除要人审。
+                if removed and structured:
+                    pending_removals[field] = new
+            elif field in SCALAR_FIELDS:
+                old = str(self.personality.data.get(field) or "").strip()
+                new = str(value or "").strip()
+                if not new or new == old:
+                    continue
+                evidence = evidence_by_field.get(field) or pool
+                confidence = self._field_confidence(confidence_by_field, field)
+                candidate = self.growth.observe(
+                    field, new, evidence, confidence, source="auto")
+                if candidate:
+                    touched.add(candidate["id"])
+        return touched, pending_removals
+
+    @staticmethod
+    def _merge_evidence(*groups: list[dict]) -> list[dict]:
+        out: list[dict] = []
+        seen: set[tuple[str, int, str]] = set()
+        for group in groups:
+            for ev in group or []:
+                if not isinstance(ev, dict):
+                    continue
+                try:
+                    seq = int(ev.get("seq") or -1)
+                except (TypeError, ValueError):
+                    seq = -1
+                key = (str(ev.get("session") or ""), seq, str(ev.get("quote") or ""))
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(ev)
+        return out[:16]
+
+    def _evolution_narrative(self, patch: dict, before: dict) -> list[str]:
+        labels = {"identity": "身份", "tone": "语气"}
+        changes: list[str] = []
+        for field, value in patch.items():
+            if field in LIST_FIELDS:
+                old = set(texts_of(before.get(field)))
+                for text in texts_of(value):
+                    if text not in old:
+                        changes.append(f"新增「{text}」")
+            elif field in SCALAR_FIELDS:
+                changes.append(f"{labels.get(field, field)}调整为「{str(value)[:40]}」")
+        return changes[:3]
+
+    def on_persona_replaced(self) -> None:
+        """人格被整包替换（导入卡片 / 回滚）后，成长层的旧候选和基线一起作废。"""
+        growth = getattr(self, "growth", None)
+        if growth is not None:
+            growth.reset_for(self.personality)
+
+    def growth_report(self) -> str:
+        """给人看的成长层状态：候选、最近叙事、上次漂移检查。"""
+        growth = getattr(self, "growth", None)
+        if growth is None:
+            return "成长层尚未初始化。"
+        snap = growth.snapshot()
+        candidates = [c for c in snap.get("candidates") or []
+                      if c.get("status") == "candidate"]
+        labels = {"identity": "身份", "tone": "语气", "traits": "性格",
+                  "values": "价值观", "behavior": "行为", "speech_habits": "说话习惯",
+                  "greeting": "开场白"}
+        lines: list[str] = []
+        if candidates:
+            lines.append("正在攒证据的候选：")
+            for c in sorted(candidates, key=lambda x: x.get("last_seen") or 0,
+                            reverse=True)[:8]:
+                sessions = len({e.get("session") for e in c.get("evidence") or []})
+                lines.append(
+                    f"- [{labels.get(c.get('field'), c.get('field'))}] {c.get('text')}"
+                    f"（证据 {c.get('observations')} 条 / {sessions} 个会话，"
+                    f"置信度 {c.get('confidence')}）")
+        else:
+            lines.append("没有正在攒证据的候选。")
+        narrative = snap.get("narrative") or []
+        if narrative:
+            lines.append("\n最近的成长：")
+            for item in narrative[-3:]:
+                lines.append(f"- 第 {item.get('version')} 版：{item.get('text')}")
+        last = (snap.get("drift") or {}).get("last") or {}
+        if last:
+            lines.append(f"\n上次漂移检查：{'通过' if last.get('ok') else '拦下'}"
+                         f"（相似度 {last.get('similarity')}，"
+                         f"新增 {last.get('added_items')} 条）")
+            for issue in last.get("issues") or []:
+                lines.append(f"  - {issue}")
+        return "\n".join(lines)
+
+    def evolve_personality(self, turns: list[dict] | None = None) -> tuple[bool, str]:
+        """让模型根据对话反馈提出改动，再经过证据门、候选池和漂移护栏。
+
+        `turns` 不传就复盘全部历史。返回 (是否成功, 说明)；失败和「无需改动」分开。
         """
         if not config.AUTO_EVOLVE_PERSONALITY:
+            return True, ""
+        if getattr(self, "growth", None) is None:
+            # 轻量测试替身可能没走 __init__；没有成长层就跳过，不让主流程崩。
             return True, ""
         if turns is None:
             turns = self.store.sessions.get(self.store.session, [])
         if not turns:
             return True, ""
+        pool = self._evolution_evidence(turns)
         dialog = "\n".join(f"{m.get('role')}: {str(m.get('content', ''))[:300]}"
                            for m in turns)[:3000]
         prompt = PERSONALITY_EVOLVE_PROMPT.format(
@@ -1874,58 +2127,134 @@ class ChatService:
         )
         # 用后台那套模型（不思考）：这是「按格式吐一小段 JSON」的活，
         # 换成会思考的 glm-5.3-flash 时踩过整轮返回非法 JSON 的情况。
-        patch, err = chat_json(
+        data, err = chat_json(
             self.client, config.EXTRACT_MODEL, [{"role": "user", "content": prompt}],
-            temperature=0.3, max_tokens=1500, retries=2,
+            temperature=0.3, max_tokens=1800, retries=2,
             no_think=bool(config.NO_THINK),
         )
-        if patch is None:
+        if data is None:
             return False, f"性格模板迭代失败：{err}"
-        if not patch:
+        if not isinstance(data, dict) or not data:
             return True, ""
-        # `#148`：她想不想把关系往前挪一档——**这是她的事**，所以先摘出来自己处理，
-        # 别送进性格字段的白名单（那里只认 traits/behavior 那些）。落地护栏在
-        # `Relationship.advance()` 里（一档一档、够资格、有理由、隔够天数），
-        # 而且**不进"待确认"**：用户明确要的就是"她自己决定要不要推进关系"。
-        rel_note = self._apply_relationship_decision(
-            patch.pop("relationship", None) if isinstance(patch, dict) else None)
-        if not patch:
-            return True, rel_note
-        # T47：应用之前先做一致性检查。冲突的条目**摘掉**、而不是整批作废——
-        # 一次演化通常只引入一两条有问题的，同批里别的调整是有价值的。
-        original = {k: (list(v) if isinstance(v, list) else v) for k, v in patch.items()}
-        conflicts = self._personality_conflicts(patch)
-        note = ""
-        if conflicts:
-            patch, removed = strip_conflicting_items(patch, conflicts)
-            note = f"（一致性检查拦下 {len(removed)} 条自相矛盾的改动：{'；'.join(removed)}）"
-            log.warning("人格演化被拦下 %d 条冲突条目：%s", len(removed), "；".join(removed))
-            self.store.event("persona_conflict", n=len(removed),
-                             items="；".join(removed)[:200])
-            # T48：**留档等人拍板**，不静默丢掉——那条改动可能是用户真实想要的
-            # （#046：用户说"别老讲道理、别劝我健身"，演化照着改了，却与 traits
-            # 「先帮你想办法」冲突）。留的是**改动原样**，否则"采纳"就没了意义。
-            self.personality.record_pending(
-                original, removed,
-                why="；".join(str(c.get("why") or "") for c in conflicts)[:200])
-            note += "，已留档：/personality pending 可查看"
-            if not patch:
-                return True, note
-        # 方案 2（用户 2026-09-28 拍板）：`cares` / `favorite_places` 属于**底座偏好**，
-        # 不自动生效——拆出来进「待确认」，由人点头；其余字段照旧直接应用。
-        # 已经在人眼前过一遍的条目会被 `_merge_growing` 标 `_pinned`，之后再怎么演化都动不了它。
-        direct, growing = self.personality.split_append_fields(patch)
+
+        patch, raw_evidence, raw_confidence, relationship, structured = (
+            self._split_evolution_payload(data))
+        # `#148`：关系推进仍然是她自己的决定，不进性格字段白名单，也不进待确认。
+        rel_note = self._apply_relationship_decision(relationship)
+
+        notes: list[str] = []
+        direct, growing = Personality.split_append_fields(patch)
         if growing:
             self.personality.record_pending(
                 growing, [],
-                why="底座偏好（她在意的事 / 她爱去的地方）只增不改，需要你确认后才生效")
+                why="底座偏好（她在意的事 / 她爱去的地方）只增不改，需要你确认后才生效",
+                evidence=pool)
             self.store.event("persona_pending", fields="、".join(growing), reason="growing-base")
-            note += ("；她的偏好类改动（" + "、".join(growing) +
-                     "）已进待确认——/personality pending 可查看并采纳")
-            patch = direct
-            if not patch:
-                return True, note
-        return True, self.personality.evolve(patch, reason="对话自动迭代") + note + rel_note
+            notes.append("她的偏好类改动（" + "、".join(growing) +
+                         "）已进待确认——/personality pending 可查看并采纳")
+        patch = direct
+        known = set(LIST_FIELDS) | set(SCALAR_FIELDS) | set(Personality.GROWING_FIELDS)
+        ignored = sorted(field for field in patch if field not in known)
+        if ignored:
+            notes.append("不在演化白名单的字段未生效：" + "、".join(ignored))
+
+        evidence_by_field = {field: self._field_evidence(raw_evidence.get(field), pool)
+                             for field in patch}
+        invalid_evidence = [field for field in patch
+                            if raw_evidence.get(field) and not evidence_by_field.get(field)]
+        if invalid_evidence:
+            self.store.event("growth_invalid_evidence",
+                             fields="、".join(invalid_evidence))
+            notes.append("模型引用的证据在对话里找不到，相关改动未生效："
+                         + "、".join(invalid_evidence))
+        touched, removals = self._gate_evolution_patch(
+            patch, evidence_by_field, raw_confidence, pool, structured=structured)
+        if removals:
+            self.personality.record_pending(
+                removals, [], why="删除或改写已有条目需要人审，不自动生效",
+                evidence=pool)
+            self.store.event("persona_pending", fields="、".join(removals),
+                             reason="removal")
+            notes.append("删除/改写已有条目已进待确认")
+
+        growth_patch, promoted, held = self.growth.ready_patch(
+            self.personality,
+            min_confidence=config.GROWTH_MIN_CONFIDENCE,
+            max_new_items=config.GROWTH_MAX_NEW_ITEMS,
+            touched=touched,
+        )
+        final_patch = dict(growth_patch)
+        if touched:
+            self.store.event("growth_candidates", observed=len(touched),
+                             promoted=len(promoted), held=len(held))
+        if not final_patch and promoted:
+            # 候选想加的东西人设里已经有了：不用再改一次，直接结案。
+            self.growth.mark_applied(promoted, self.personality)
+        applied_evidence = self._merge_evidence(
+            pool,
+            *[candidate.get("evidence") or []
+              for candidate in self.growth.candidate_summary(promoted)],
+        )
+
+        if final_patch:
+            original = copy.deepcopy(final_patch)
+            conflicts = self._personality_conflicts(final_patch)
+            if conflicts:
+                final_patch, removed = strip_conflicting_items(final_patch, conflicts)
+                self.store.event("persona_conflict", n=len(removed),
+                                 items="；".join(removed)[:200])
+                self.personality.record_pending(
+                    original, removed,
+                    why="；".join(str(c.get("why") or "") for c in conflicts)[:200],
+                    evidence=applied_evidence)
+                notes.append(f"一致性检查拦下 {len(removed)} 条（已留档）")
+
+        if final_patch:
+            before = copy.deepcopy(self.personality.data)
+            self.growth.ensure_baseline(before)
+            preview, dropped, changes = self.personality.preview(final_patch)
+            ok_drift, issues, metrics = self.growth.check_drift(
+                before, preview,
+                max_new_items=config.GROWTH_MAX_NEW_ITEMS,
+                min_similarity=config.GROWTH_MIN_SIMILARITY,
+                min_baseline_similarity=config.GROWTH_MIN_BASELINE_SIMILARITY,
+            )
+            self.growth.record_drift(metrics, version=int(before.get("version", 0)) + 1)
+            if not ok_drift:
+                self.personality.record_pending(
+                    final_patch, issues, why="漂移护栏", evidence=applied_evidence)
+                self.store.event("growth_drift_blocked", n=len(issues),
+                                 items="；".join(issues)[:200])
+                notes.append("漂移护栏拦下这次改动，已留档等人工判断")
+                log.warning("人格漂移护栏拦下改动：%s", "；".join(issues))
+            else:
+                message = self.personality.evolve(
+                    final_patch, reason="对话自动迭代",
+                    evidence=applied_evidence, source="auto")
+                self.growth.mark_applied(promoted, self.personality)
+                if message:
+                    stage = self.relationship.stage(
+                        time.time(), self._user_msg_count()).get("key", "")
+                    self.growth.add_narrative(
+                        int(self.personality.data.get("version") or 0),
+                        self._evolution_narrative(final_patch, before),
+                        stage=stage,
+                    )
+                    self.store.event("growth_applied",
+                                     version=self.personality.data.get("version"),
+                                     promoted=len(promoted),
+                                     note=str(message or "")[:120])
+                    notes.append(str(message)[:240])
+                if dropped:
+                    notes.append(f"护栏另外拦下：{'、'.join(dropped)}")
+
+        if held:
+            texts = [c.get("text") or "" for c in
+                     self.growth.candidate_summary(held)[:2]]
+            notes.append(f"{len(held)} 条改动还在攒证据" +
+                         (f"（{'、'.join(texts)}）" if texts else "") +
+                         "，证据够了会自动转正")
+        return True, "；".join(item for item in notes if item) + rel_note
 
     def _apply_relationship_decision(self, say) -> str:
         """她把关系往前挪一档的**决定**（`#148`）——护栏在 `Relationship.advance()` 里。
@@ -1944,6 +2273,13 @@ class ChatService:
         log.info("她的关系决定：%s（%s）", msg, "已落地" if ok else "被护栏拦下")
         self.store.event("relationship_advanced" if ok else "relationship_advance_refused",
                          message=msg[:120], to=to_key[:12])
+        growth = getattr(self, "growth", None)
+        if ok and growth is not None:
+            stage = self.relationship.stage(
+                time.time(), self._user_msg_count()).get("key", "")
+            growth.add_narrative(
+                int(self.personality.data.get("version") or 0),
+                [f"关系推进到「{stage}」"], stage=stage)
         return f"；{msg}" if ok else f"；（她想推进关系，但没落地：{msg}）"
 
     # ==================== 她主动说话（`#108`） ====================

@@ -522,6 +522,7 @@ def main() -> int:
     if args.evolve:
         print("===== 演化对照 =====")
         service.personality = Personality(path=on_path)
+        service.on_persona_replaced()      # 基准目录可能留着上次的候选/基线
         before = copy.deepcopy(service.personality.data)
         before_runs = _run_group(service, cases, "evo_before", "演化前", args.repeat)
         print("触发一次真实的性格演化（素材见 EVOLVE_MATERIAL）……")
@@ -555,6 +556,18 @@ def main() -> int:
 
         print(f"符合「像」的条数：演化前 {_like(before_runs)} → 演化后 {_like(after_runs)}")
         print(f"底座是否守住：{'✓ 逐字不变' if base_kept else '✗ 被改动了！'}")
+        growth = service.growth.snapshot()
+        drift = (growth.get("drift") or {}).get("last") or {}
+        candidate_n = len([c for c in growth.get("candidates") or []
+                           if c.get("status") == "candidate"])
+        if drift:
+            print(f"漂移检查：{'通过' if drift.get('ok') else '拦下'}"
+                  f"（相似度 {drift.get('similarity')}，"
+                  f"新增 {drift.get('added_items')} 条，候选 {candidate_n} 条）")
+            for issue in drift.get("issues") or []:
+                print(f"  · {issue}")
+        else:
+            print(f"漂移检查：未执行（候选 {candidate_n} 条）")
         evo_consistency = _consistency_by_round(service, after_runs) or {}
         report["evolve"] = {"ok": ok, "msg": msg, "changed": changed, "diff": diff,
                             "base_kept": base_kept,
@@ -562,6 +575,8 @@ def main() -> int:
                             "like_after": _like(after_runs),
                             "conflicts_after": evo_consistency.get("conflicts") or [],
                             "reason_after": evo_consistency.get("reason", ""),
+                            "growth": {"drift": drift, "candidate_count": candidate_n,
+                                       "narrative": growth.get("narrative") or []},
                             "before_runs": before_runs, "after_runs": after_runs}
         print()
 

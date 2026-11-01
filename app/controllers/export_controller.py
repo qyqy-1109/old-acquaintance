@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api/export", tags=["export"])
 _FILES = (
     "personality.json",
     "personality.json.pending.json",
+    "growth.json",
     "world.json",
     "user_profile.json",
     "relationship.json",
