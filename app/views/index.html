@@ -13,74 +13,111 @@
 <body class="bg-paper font-sans text-sm text-ink antialiased">
   <a href="#message-input" class="skip-link">跳到消息输入</a>
 
-  <main id="entry-screen" class="flex min-h-dvh flex-col">
-    <header class="flex items-center justify-between px-6 py-6 sm:px-10">
-      <a href="/" class="flex items-center gap-2.5 font-medium" aria-label="旧识首页">
+  <main id="entry-screen" class="entry-screen flex min-h-dvh flex-col">
+    <header class="entry-header">
+      <a href="/" class="brand-home flex items-center gap-2.5 font-medium" aria-label="旧识首页">
         <span class="brand-mark"><i data-icon="house" aria-hidden="true"></i></span>
-        <span>旧识</span>
+        <span class="font-display text-lg">旧识</span>
       </a>
-      <span id="entry-status" class="flex items-center gap-2 text-xs text-muted" role="status"><span class="status-dot"></span><span>正在连接</span></span>
+      <span id="entry-status" class="entry-status" role="status"><span class="status-dot"></span><span>正在连接</span></span>
     </header>
-    <section class="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-7 pb-16 pt-8 sm:px-8" aria-labelledby="entry-title">
-      <img id="entry-avatar" class="mb-6 size-16 rounded-full border border-line object-cover" src="/static/assets/avatar-placeholder.png" alt="沈知夏头像占位图" width="64" height="64">
-      <h1 id="entry-title" class="font-display text-[30px] leading-tight text-ink">旧识</h1>
-      <p class="mt-3 text-base text-muted">欢迎回来，进来坐坐吧。</p>
-      <nav id="wizard-steps" class="mt-6 flex items-center justify-between gap-2 text-xs" aria-label="首次设置步骤" hidden>
-        <span id="wizard-step-1">1 模型</span><span class="text-faint">→</span>
-        <span id="wizard-step-2">2 账号</span><span class="text-faint">→</span>
-        <span id="wizard-step-3">3 人格（可选）</span>
-      </nav>
-      <form id="wizard-model" class="mt-5 rounded-lg border border-line bg-white p-4" hidden>
-        <p class="font-medium">第 1 步 · 连接模型</p>
-        <p class="mt-1 text-xs leading-6 text-muted">先填主 API 和 embedding；保存后就能创建账号。没有 Key 也可以先看看界面。</p>
-        <div class="mt-4 grid gap-3 sm:grid-cols-2">
-          <label class="block text-xs text-muted">主 API 地址<input id="wizard-base" class="field mt-1 w-full" placeholder="https://api.example.com/v1"></label>
-          <label class="block text-xs text-muted">主 API Key<input id="wizard-api-key" type="password" autocomplete="new-password" class="field mt-1 w-full" placeholder="sk-..."></label>
-          <label class="block text-xs text-muted">Embedding 地址<input id="wizard-embed-base" class="field mt-1 w-full" placeholder="https://api.example.com/v1"></label>
-          <label class="block text-xs text-muted">Embedding Key<input id="wizard-embed-key" type="password" autocomplete="new-password" class="field mt-1 w-full" placeholder="sk-..."></label>
+
+    <section class="entry-shell" aria-labelledby="entry-title">
+      <div class="entry-intro">
+        <div class="entry-portrait">
+          <img id="entry-avatar" src="/static/assets/avatar-placeholder.png" alt="沈知夏头像占位图" width="88" height="88">
+          <span class="entry-portrait-ring" aria-hidden="true"></span>
         </div>
-        <p id="wizard-model-error" class="error-message mt-3" role="alert" hidden></p>
-        <p id="wizard-model-note" class="mt-3 whitespace-pre-wrap text-xs leading-6 text-muted" hidden></p>
-        <div class="mt-4 flex flex-wrap justify-end gap-2">
-          <button id="wizard-more" type="button" class="secondary-button">更多设置</button>
-          <button id="wizard-test" type="button" class="secondary-button">测试连接</button>
-          <button id="wizard-save" type="submit" class="primary-button">保存并继续</button>
-        </div>
-      </form>
-      <form id="login-form" class="mt-7 space-y-5" novalidate hidden>
-        <div>
-          <label for="username-input" class="mb-2 block text-sm font-medium">账号</label>
-          <div class="input-wrap"><i data-icon="user-round" aria-hidden="true"></i><input id="username-input" name="username" type="text" maxlength="60" autocomplete="username" placeholder="你的账号" class="min-w-0 flex-1" required></div>
-        </div>
-        <div>
-          <label for="password-input" class="mb-2 block text-sm font-medium">密码</label>
-          <div class="input-wrap"><i data-icon="key-round" aria-hidden="true"></i><input id="password-input" name="password" type="password" maxlength="128" autocomplete="current-password" placeholder="你的密码" class="min-w-0 flex-1" required><button id="toggle-password" type="button" class="icon-button small" aria-label="显示密码" title="显示密码"><i data-icon="eye" aria-hidden="true"></i></button></div>
-        </div>
-        <div id="password-confirm-wrap" hidden>
-          <label for="password-confirm" class="mb-2 block text-sm font-medium">确认密码</label>
-          <div class="input-wrap"><i data-icon="key-round" aria-hidden="true"></i><input id="password-confirm" type="password" maxlength="128" autocomplete="new-password" placeholder="再次输入密码" class="min-w-0 flex-1"></div>
-          <p class="mt-2 text-xs text-muted">8 至 128 个字符</p>
-        </div>
-        <label id="inherit-default-wrap" class="flex items-start gap-2.5 text-xs leading-6 text-muted" hidden><input id="inherit-default" type="checkbox" class="mt-1 size-4 shrink-0 accent-brand"><span>关联我原来的世界书、时间轴和画像</span></label>
-        <div id="entry-error" class="error-message" role="alert" hidden></div>
-        <button id="login-submit" class="primary-button w-full justify-center" type="submit" disabled><span>正在连接</span><i data-icon="chevron-right" aria-hidden="true"></i></button>
-        <button id="entry-retry" type="button" class="secondary-button w-full justify-center" hidden><i data-icon="refresh-cw" aria-hidden="true"></i>重新连接</button>
-      </form>
-      <section id="wizard-persona" class="mt-5 rounded-lg border border-line bg-white p-4" hidden>
-        <p class="font-medium">第 3 步 · 人格卡片（可选）</p>
-        <p class="mt-1 text-xs leading-6 text-muted">可以导入旧识 JSON、SillyTavern v2 JSON 或带角色卡元数据的 PNG；不导入就使用默认角色。</p>
-        <div class="persona-drop mt-3 rounded-lg border border-dashed border-line p-3 text-xs leading-6 text-muted" data-persona-drop>拖入人格卡片 JSON / PNG，或点“选择人格卡片”</div>
-        <p id="wizard-persona-note" class="mt-2 whitespace-pre-wrap text-xs leading-6 text-muted"></p>
-        <div class="mt-4 flex flex-wrap justify-end gap-2">
-          <button id="wizard-persona-import" type="button" class="secondary-button">选择人格卡片</button>
-          <button id="wizard-persona-skip" type="button" class="secondary-button">跳过</button>
-          <button id="wizard-persona-start" type="button" class="primary-button" hidden>开始聊天</button>
-        </div>
-      </section>
-      <button id="demo-open" type="button" class="mt-4 w-full text-center text-xs text-muted underline underline-offset-4" hidden>没有 Key？先看看界面（演示）</button>
-      <div class="mt-9 border-t border-line pt-5 text-xs text-faint">今天的故事，也慢慢说。</div>
+        <p class="entry-kicker">本地优先 · 慢慢相处</p>
+        <h1 id="entry-title" class="entry-title">旧识</h1>
+        <p class="entry-lede">一个住在你电脑里的陪伴者。有记忆、有自己的生活，也会慢慢长成她自己的样子。</p>
+        <nav id="wizard-steps" class="wizard-steps" aria-label="首次设置步骤" hidden>
+          <span id="wizard-step-1" class="wizard-step is-active"><span class="wizard-step-num">1</span><span>模型</span></span>
+          <span class="wizard-step-arrow" aria-hidden="true">→</span>
+          <span id="wizard-step-2" class="wizard-step is-pending"><span class="wizard-step-num">2</span><span>账号</span></span>
+          <span class="wizard-step-arrow" aria-hidden="true">→</span>
+          <span id="wizard-step-3" class="wizard-step is-pending"><span class="wizard-step-num">3</span><span>人格 <em class="wizard-step-optional">可选</em></span></span>
+        </nav>
+        <p class="entry-footnote">今天的故事，也慢慢说。</p>
+      </div>
+
+      <div class="entry-panel">
+        <form id="wizard-model" class="entry-card" hidden>
+          <div class="entry-card-head">
+            <p class="entry-card-kicker">01 · 模型</p>
+            <h2 class="entry-card-title">连接模型</h2>
+            <p class="entry-card-note">先填主对话和 embedding；保存后就能创建账号。没有 Key 也可以先看看界面。</p>
+          </div>
+          <div class="entry-field-group">
+            <p class="entry-group-title">主对话</p>
+            <div class="entry-fields">
+              <label class="entry-field-label">主 API 地址<input id="wizard-base" class="field mt-1 w-full" placeholder="https://api.example.com/v1"></label>
+              <label class="entry-field-label">主 API Key<input id="wizard-api-key" type="password" autocomplete="new-password" class="field mt-1 w-full" placeholder="sk-..."></label>
+            </div>
+          </div>
+          <div class="entry-field-group">
+            <p class="entry-group-title">记忆向量</p>
+            <div class="entry-fields">
+              <label class="entry-field-label">Embedding 地址<input id="wizard-embed-base" class="field mt-1 w-full" placeholder="https://api.example.com/v1"></label>
+              <label class="entry-field-label">Embedding Key<input id="wizard-embed-key" type="password" autocomplete="new-password" class="field mt-1 w-full" placeholder="sk-..."></label>
+            </div>
+          </div>
+          <p id="wizard-model-error" class="error-message" role="alert" hidden></p>
+          <p id="wizard-model-note" class="whitespace-pre-wrap text-xs leading-6 text-muted" hidden></p>
+          <div class="entry-actions">
+            <button id="wizard-more" type="button" class="text-link-button">更多设置</button>
+            <div class="entry-actions-main">
+              <button id="wizard-test" type="button" class="secondary-button">测试连接</button>
+              <button id="wizard-save" type="submit" class="primary-button">保存并继续</button>
+            </div>
+          </div>
+        </form>
+
+        <form id="login-form" class="entry-card" novalidate hidden>
+          <div class="entry-card-head">
+            <p class="entry-card-kicker">02 · 账号</p>
+            <h2 class="entry-card-title">进来坐坐</h2>
+            <p class="entry-card-note">账号只存在这台机器上，用来把你们的记忆分开。</p>
+          </div>
+          <div class="entry-field-group">
+            <label for="username-input" class="entry-field-label">账号</label>
+            <div class="input-wrap"><i data-icon="user-round" aria-hidden="true"></i><input id="username-input" name="username" type="text" maxlength="60" autocomplete="username" placeholder="你的账号" class="min-w-0 flex-1" required></div>
+          </div>
+          <div class="entry-field-group">
+            <label for="password-input" class="entry-field-label">密码</label>
+            <div class="input-wrap"><i data-icon="key-round" aria-hidden="true"></i><input id="password-input" name="password" type="password" maxlength="128" autocomplete="current-password" placeholder="你的密码" class="min-w-0 flex-1" required><button id="toggle-password" type="button" class="icon-button small" aria-label="显示密码" title="显示密码"><i data-icon="eye" aria-hidden="true"></i></button></div>
+          </div>
+          <div id="password-confirm-wrap" class="entry-field-group" hidden>
+            <label for="password-confirm" class="entry-field-label">确认密码</label>
+            <div class="input-wrap"><i data-icon="key-round" aria-hidden="true"></i><input id="password-confirm" type="password" maxlength="128" autocomplete="new-password" placeholder="再次输入密码" class="min-w-0 flex-1"></div>
+            <p class="text-xs text-muted">8 至 128 个字符</p>
+          </div>
+          <label id="inherit-default-wrap" class="entry-check" hidden><input id="inherit-default" type="checkbox" class="mt-1 size-4 shrink-0 accent-brand"><span>关联我原来的世界书、时间轴和画像</span></label>
+          <div id="entry-error" class="error-message" role="alert" hidden></div>
+          <button id="login-submit" class="primary-button w-full justify-center" type="submit" disabled><span>正在连接</span><i data-icon="chevron-right" aria-hidden="true"></i></button>
+          <button id="entry-retry" type="button" class="secondary-button w-full justify-center" hidden><i data-icon="refresh-cw" aria-hidden="true"></i>重新连接</button>
+        </form>
+
+        <section id="wizard-persona" class="entry-card" hidden>
+          <div class="entry-card-head">
+            <p class="entry-card-kicker">03 · 人格</p>
+            <h2 class="entry-card-title">她是谁</h2>
+            <p class="entry-card-note">可以导入旧识 JSON、SillyTavern v2 JSON 或带角色卡元数据的 PNG；不导入就使用默认角色。</p>
+          </div>
+          <div class="persona-drop" data-persona-drop>拖入人格卡片 JSON / PNG，或点“选择人格卡片”</div>
+          <p id="wizard-persona-note" class="whitespace-pre-wrap text-xs leading-6 text-muted"></p>
+          <div class="entry-actions-main">
+            <button id="wizard-persona-import" type="button" class="secondary-button">选择人格卡片</button>
+            <button id="wizard-persona-skip" type="button" class="secondary-button">跳过</button>
+            <button id="wizard-persona-start" type="button" class="primary-button" hidden>开始聊天</button>
+          </div>
+        </section>
+
+        <button id="demo-open" type="button" hidden>没有 Key？先看看界面 <span aria-hidden="true">→</span></button>
+      </div>
     </section>
-    <footer class="px-6 pb-6 text-center text-xs text-faint">旧识</footer>
+
+    <footer class="entry-footer"><span>旧识</span><span>本地优先 · 数据留在你自己的机器上</span></footer>
   </main>
 
   <div id="app-shell" class="app-layout" hidden>
@@ -114,19 +151,21 @@
         <span>演示模式 · 只读预览。配置模型后就能开始真实对话。</span>
         <span class="flex shrink-0 gap-2"><button id="demo-settings" type="button" class="font-medium underline underline-offset-4">配置模型</button><button id="demo-exit" type="button" class="font-medium underline underline-offset-4">退出演示</button></span>
       </div>
-      <header class="flex h-20 shrink-0 items-center justify-between gap-4 border-b border-line bg-white px-4 sm:px-8 lg:px-10">
-        <div class="flex min-w-0 items-center gap-3">
-          <button id="nav-open" type="button" class="icon-button md:hidden" aria-label="打开导航" title="打开导航" aria-controls="sidebar" aria-expanded="false"><i data-icon="panel-left" aria-hidden="true"></i></button>
-          <div class="min-w-0"><h1 id="view-title" class="text-base font-semibold">对话</h1><p id="view-subtitle" class="mt-0.5 truncate text-xs text-muted"></p></div>
-        </div>
-        <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <button id="refresh-state" class="icon-button" type="button" aria-label="刷新状态" title="刷新状态"><i data-icon="refresh-cw" aria-hidden="true"></i></button>
-          <button id="search-open" class="icon-button" type="button" aria-label="搜索" title="搜索"><i data-icon="search" aria-hidden="true"></i></button>
-          <button id="sessions-open" class="icon-button" type="button" aria-label="会话" title="会话"><i data-icon="messages-square" aria-hidden="true"></i></button>
-          <button id="settings-open" class="icon-button" type="button" aria-label="设置" title="设置"><i data-icon="key-round" aria-hidden="true"></i></button>
-          <button id="tts-toggle" class="icon-button" type="button" aria-label="关闭语音" title="关闭语音" aria-pressed="true"><i data-icon="volume-2" aria-hidden="true"></i></button>
-          <div class="mx-1 hidden h-5 w-px bg-line sm:block"></div>
-          <img id="header-avatar" class="size-9 rounded-full border border-line object-cover sm:size-10" src="/static/assets/avatar-placeholder.png" alt="沈知夏" width="40" height="40">
+      <header class="flex h-20 shrink-0 items-center border-b border-line bg-white px-4 sm:px-8 lg:px-10">
+        <div class="chat-header-inner">
+          <div class="flex min-w-0 items-center gap-3">
+            <button id="nav-open" type="button" class="icon-button md:hidden" aria-label="打开导航" title="打开导航" aria-controls="sidebar" aria-expanded="false"><i data-icon="panel-left" aria-hidden="true"></i></button>
+            <div class="min-w-0"><h1 id="view-title" class="text-base font-semibold">对话</h1><p id="view-subtitle" class="mt-0.5 hidden truncate text-xs text-muted sm:block"></p></div>
+          </div>
+          <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <button id="refresh-state" class="icon-button" type="button" aria-label="刷新状态" title="刷新状态"><i data-icon="refresh-cw" aria-hidden="true"></i></button>
+            <button id="search-open" class="icon-button" type="button" aria-label="搜索" title="搜索"><i data-icon="search" aria-hidden="true"></i></button>
+            <button id="sessions-open" class="icon-button" type="button" aria-label="会话" title="会话"><i data-icon="messages-square" aria-hidden="true"></i></button>
+            <button id="settings-open" class="icon-button" type="button" aria-label="设置" title="设置"><i data-icon="key-round" aria-hidden="true"></i></button>
+            <button id="tts-toggle" class="icon-button" type="button" aria-label="关闭语音" title="关闭语音" aria-pressed="true"><i data-icon="volume-2" aria-hidden="true"></i></button>
+            <div class="mx-1 hidden h-5 w-px bg-line sm:block"></div>
+            <img id="header-avatar" class="size-9 rounded-full border border-line object-cover sm:size-10" src="/static/assets/avatar-placeholder.png" alt="沈知夏" width="40" height="40">
+          </div>
         </div>
       </header>
       <main id="chat-view" class="relative flex min-h-0 flex-1 flex-col">

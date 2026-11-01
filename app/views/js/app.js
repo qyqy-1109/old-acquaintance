@@ -126,6 +126,17 @@ function setButtonBusy(button, active) {
 
 function isQuiet(error) { return error.name === "AbortError" || error.status === 401; }
 
+function entryErrorMessage(error) {
+  const message = String(error?.message || "");
+  if (error?.name === "AbortError" || /aborted|abort/i.test(message)) {
+    return "连接超时了。请确认本地服务还在运行，然后再试一次。";
+  }
+  if (/failed to fetch|networkerror|load failed/i.test(message)) {
+    return "连不上本地服务。请确认服务已经启动，再刷新页面。";
+  }
+  return message || "出了点问题，请稍后再试。";
+}
+
 async function action(button, task, errorId = "memory-error") {
   if (button.disabled) return;
   const epoch = client.epoch;
@@ -152,8 +163,11 @@ function setWizardStep(step) {
   wizardStep = step;
   $("wizard-steps").hidden = !wizardActive;
   for (let i = 1; i <= 3; i++) {
-    $("wizard-step-" + i).className = i === step ? "font-medium text-ink"
-      : i < step ? "text-brand" : "text-faint";
+    const item = $("wizard-step-" + i);
+    item.className = "wizard-step "
+      + (i === step ? "is-active" : i < step ? "is-done" : "is-pending");
+    if (i === step) item.setAttribute("aria-current", "step");
+    else item.removeAttribute("aria-current");
   }
   $("wizard-model").hidden = !wizardActive || step !== 1;
   $("login-form").hidden = wizardActive && step !== 2;
@@ -265,7 +279,7 @@ async function loadWizardSettings() {
     $("wizard-embed-key").value = "";
     $("wizard-embed-key").placeholder = embedKey.set ? `已设置：${embedKey.masked}` : "sk-...";
   } catch (error) {
-    setError("wizard-model-error", error.message);
+    setError("wizard-model-error", entryErrorMessage(error));
   }
 }
 
@@ -308,7 +322,7 @@ async function saveWizardModel(event) {
       $("wizard-model-note").textContent = result.message || "配置已保存，但需要重启服务后生效。";
     }
   } catch (error) {
-    setError("wizard-model-error", error.message);
+    setError("wizard-model-error", entryErrorMessage(error));
   } finally {
     setButtonBusy($("wizard-save"), false);
   }
@@ -325,7 +339,7 @@ async function testWizardModel() {
       `主对话：${result.chat.ok ? "可用" : "失败"} — ${result.chat.message}\n`
       + `Embedding：${result.embedding.ok ? "可用" : "失败"} — ${result.embedding.message}`;
   } catch (error) {
-    setError("wizard-model-error", error.message);
+    setError("wizard-model-error", entryErrorMessage(error));
   } finally {
     setButtonBusy($("wizard-test"), false);
   }
@@ -346,7 +360,7 @@ async function finishWizard() {
   try {
     await enterApp(await client.json("/api/state"));
   } catch (error) {
-    showEntry(error.message);
+    showEntry(entryErrorMessage(error));
   }
 }
 
@@ -357,7 +371,7 @@ async function openDemo() {
     await enterApp(data, { demo: true });
   } catch (error) {
     demoMode = false;
-    setError("entry-error", error.message);
+    setError("entry-error", entryErrorMessage(error));
   }
 }
 
@@ -705,7 +719,7 @@ async function boot() {
     showEntry();
   } catch (error) {
     health = null;
-    showEntry(error.message);
+    showEntry(entryErrorMessage(error));
     $("entry-status").querySelector("span:last-child").textContent = "服务未连接";
     $("entry-status").querySelector(".status-dot").classList.add("offline");
     $("entry-retry").hidden = false;
@@ -752,7 +766,7 @@ async function login() {
         configureEntry();
       } catch { $("entry-retry").hidden = false; }
     }
-    setError("entry-error", error.message);
+    setError("entry-error", entryErrorMessage(error));
   } finally { setLoginBusy(false); }
 }
 
